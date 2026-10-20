@@ -1,16 +1,13 @@
 {
   "name": "Sổ Tay Chủ Nhiệm 10A12 - K58-QT",
   "short_name": "10A12 GVCN",
-  "description": "Ứng dụng Quản lý Chủ nhiệm Lớp 10A12 - THPT số 1 Quang Trung",
   "start_url": "./index.html",
-  "scope": "./",
   "display": "standalone",
   "background_color": "#F8FAFC",
   "theme_color": "#4338CA",
-  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "icon-gvcn.png",
+      "src": "app_icon_gvcn.png",
       "sizes": "192x192 512x512",
       "type": "image/png",
       "purpose": "any maskable"

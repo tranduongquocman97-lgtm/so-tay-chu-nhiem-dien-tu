@@ -1,16 +1,13 @@
 {
-  "name": "Tra Cứu Học Sinh 10A12 - K58-QT",
+  "name": "Tra Cứu Học Sinh 10A12",
   "short_name": "10A12 Tra Cứu",
-  "description": "Cổng Tra Cứu Nề Nếp & Chuyên Cần Học Sinh 10A12",
   "start_url": "./tracuu.html",
-  "scope": "./",
   "display": "standalone",
   "background_color": "#F1F5F9",
   "theme_color": "#4F46E5",
-  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "icon-hs.png",
+      "src": "app_icon_10a12.png",
       "sizes": "192x192 512x512",
       "type": "image/png",
       "purpose": "any maskable"

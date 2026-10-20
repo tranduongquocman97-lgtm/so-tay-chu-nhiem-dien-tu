@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Sổ Tay Chủ Nhiệm 10A12 - K58-QT</title>
 
-  <!-- PWA & Apple iOS Metadata -->
+  <!-- PWA Metadata & iOS Support -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4338CA">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="10A12 GVCN">
-  <link rel="apple-touch-icon" href="icon-gvcn.png">
-  <link rel="icon" type="image/png" href="icon-gvcn.png">
+  <link rel="apple-touch-icon" href="app_icon_gvcn.png">
+  <link rel="icon" type="image/png" href="app_icon_gvcn.png">
 
   <!-- Phông chữ & Thư viện UI -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -45,43 +45,53 @@
 
 <body class="min-h-full font-sans text-slate-800 antialiased pb-24 md:pb-10 selection:bg-brand-500 selection:text-white">
 
-  <!-- HEADER -->
-  <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80">
-    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+  <!-- ==================== HEADER ==================== -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-2">
+      
+      <!-- Logo GVCN & Tên lớp -->
       <div class="flex items-center gap-3">
-        <img src="icon-gvcn.png" alt="10A12 Icon" class="w-10 h-10 rounded-2xl shadow-md border border-slate-200">
+        <img src="app_icon_gvcn.png" alt="Logo 10A12 GVCN" class="w-10 h-10 rounded-2xl shadow-md border border-slate-200 shrink-0 object-cover">
         <div>
-          <h1 class="text-sm font-extrabold text-slate-900 tracking-tight">LỚP 10A12 <span class="text-[10px] bg-brand-50 text-brand-600 border border-brand-200 px-1.5 py-0.5 rounded-md ml-1">K58-QT</span></h1>
-          <p class="text-[11px] text-slate-500">THPT số 1 Quang Trung (Phân hiệu)</p>
+          <h1 class="text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
+            LỚP 10A12 <span class="text-[10px] bg-brand-50 text-brand-600 border border-brand-200 px-1.5 py-0.5 rounded-md font-bold">K58-QT</span>
+          </h1>
+          <p class="text-[11px] text-slate-500 truncate">THPT số 1 Quang Trung (Phân hiệu)</p>
         </div>
       </div>
 
-      <!-- Khu vực điều khiển -->
+      <!-- Điều khiển hệ thống -->
       <div class="flex items-center gap-2">
-        <!-- Nút Cài đặt PWA lên điện thoại (Tự động hiện khi trình duyệt hỗ trợ) -->
-        <button id="pwaInstallBtn" onclick="installPwaApp()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md transition animate-bounce">
+        
+        <!-- Nút Cài đặt App (Tự động kích hoạt trên Chrome/Safari) -->
+        <button id="pwaInstallBtn" onclick="installPwaApp()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md transition">
           <i class="fa-solid fa-download"></i> Cài App
         </button>
 
-        <a href="tracuu.html" target="_blank" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition">
-          <i class="fa-solid fa-arrow-up-right-from-square"></i> Cổng Tra Cứu HS
-        </a>
-        
-        <button onclick="openApiConfigModal()" class="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition" title="Cài đặt URL Google Apps Script">
-          <i class="fa-solid fa-gear text-sm"></i>
+        <!-- Trạng thái kết nối Google Apps Script -->
+        <button onclick="openApiConfigModal()" id="connectionBadge" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-600 transition" title="Bấm để cấu hình URL Google Apps Script">
+          <span class="w-2 h-2 rounded-full bg-amber-400" id="statusDot"></span>
+          <span class="hidden sm:inline" id="statusText">Chưa nạp URL</span>
+          <i class="fa-solid fa-gear text-slate-400 text-xs ml-0.5"></i>
         </button>
 
+        <a href="tracuu.html" target="_blank" class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> Cổng HS
+        </a>
+
+        <!-- Nút Mã PIN Phân Quyền -->
         <button onclick="document.getElementById('authModal').classList.remove('hidden')" class="flex items-center gap-2 p-1.5 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50">
           <i class="fa-solid fa-user-lock text-brand-600"></i>
           <span id="userDisplayName" class="hidden sm:inline">Thầy Quốc Mẫn (GVCN)</span>
         </button>
+
       </div>
     </div>
   </header>
 
   <main class="max-w-6xl mx-auto px-4 pt-5 space-y-5">
 
-    <!-- HERO BANNER (THỜI KHÓA BIỂU CHUẨN) -->
+    <!-- HERO BANNER (THỜI GIAN BIỂU MỚI: SÁNG 06:45–11:20 | CHIỀU 13:45–16:40) -->
     <section class="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-5 shadow-xl">
       <div class="relative z-10 flex flex-wrap justify-between items-center gap-4">
         <div>
@@ -140,10 +150,10 @@
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
             <h3 class="font-extrabold text-slate-900 text-sm sm:text-base">Ma Trận Nề Nếp 7 Buổi Học</h3>
-            <p class="text-xs text-slate-500">Bấm chọn từng ca học để xem chi tiết đối soát nề nếp</p>
+            <p class="text-xs text-slate-500">Đối soát các lỗi vi phạm trong từng ca học để xử lý lao động phạt</p>
           </div>
-          <button onclick="loadWeeklyOverview()" class="text-brand-600 font-bold text-xs flex items-center gap-1 hover:underline">
-            <i class="fa-solid fa-arrows-rotate"></i> Làm mới dữ liệu
+          <button onclick="loadAllAppData()" class="text-brand-600 font-bold text-xs flex items-center gap-1 hover:underline">
+            <i class="fa-solid fa-arrows-rotate"></i> Tải lại dữ liệu
           </button>
         </div>
 
@@ -234,7 +244,7 @@
       </div>
     </div>
 
-    <!-- ==================== TAB 4: HỒ SƠ 45 HỌC SINH THỰC TẾ ==================== -->
+    <!-- ==================== TAB 4: HỒ SƠ 45 HỌC SINH ==================== -->
     <div id="tab-students" class="tab-content hidden space-y-4">
       <div class="bg-white rounded-3xl border border-slate-200 p-5 space-y-4">
         <div class="flex flex-wrap justify-between items-center gap-3 border-b border-slate-100 pb-3">
@@ -261,22 +271,27 @@
     <button onclick="switchTab('tab-students')" class="flex flex-col items-center gap-1 hover:text-slate-800"><i class="fa-solid fa-address-book text-base"></i><span>Danh sách</span></button>
   </nav>
 
-  <!-- MODAL CẤU HÌNH SCRIPT_URL -->
+  <!-- MODAL CẤU HÌNH SCRIPT_URL (CHỐNG LỖI KẾT NỐI) -->
   <div id="apiConfigModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4">
       <div class="flex justify-between items-center border-b pb-3">
-        <h3 class="font-extrabold text-slate-900 text-sm uppercase">Cấu hình URL Kết nối (Web App)</h3>
+        <h3 class="font-extrabold text-slate-900 text-sm uppercase">Cấu hình URL Google Apps Script</h3>
         <button onclick="closeApiConfigModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
       </div>
+      
       <div class="space-y-2 text-xs">
-        <label class="font-bold text-slate-700 block">Dán Web App URL của Google Apps Script:</label>
+        <label class="font-bold text-slate-700 block">Dán Web App URL của bạn:</label>
         <input type="text" id="apiConfigInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full border-2 border-slate-200 rounded-xl p-3 font-mono text-[11px] focus:border-brand-600 outline-none">
-        <p class="text-slate-500 text-[10px] italic leading-relaxed">
-          *URL này được lưu tự động vào trình duyệt và dùng chung cho cả trang tra cứu học sinh.
-        </p>
+        
+        <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-1 text-[11px]">
+          <p class="font-bold"><i class="fa-solid fa-circle-exclamation mr-1"></i>Lưu ý để không bao giờ bị lỗi:</p>
+          <p>1. Link phải kết thúc bằng <b>/exec</b> (không được dùng link đuôi <i>/dev</i>).</p>
+          <p>2. Khi Deploy trên Apps Script, mục <b>Who has access</b> phải chọn <b>Anyone</b>.</p>
+        </div>
       </div>
+
       <div class="flex gap-2 pt-2 border-t">
-        <button onclick="closeApiConfigModal()" class="w-1/2 py-2.5 bg-slate-100 font-bold text-xs rounded-xl text-slate-600">Đóng</button>
+        <button onclick="testConnectionNow()" id="btnTestApi" class="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 font-bold text-xs rounded-xl text-slate-700">Kiểm tra kết nối</button>
         <button onclick="saveApiConfigUrl()" class="w-1/2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl shadow-2xs">Lưu cấu hình</button>
       </div>
     </div>
@@ -300,10 +315,21 @@
     </div>
   </div>
 
-  <!-- ==================== TOÀN BỘ SCRIPT ĐIỀU HÀNH ==================== -->
+  <!-- ==================== SCRIPT ĐIỀU HÀNH ==================== -->
   <script>
-    // 1. Quản lý SCRIPT_URL
     let SCRIPT_URL = localStorage.getItem("10A12_SCRIPT_URL") || "";
+
+    function updateConnectionBadge(isConnected, message) {
+      const dot = document.getElementById("statusDot");
+      const text = document.getElementById("statusText");
+      if (isConnected) {
+        dot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+        text.innerText = "Đã kết nối Sheets";
+      } else {
+        dot.className = "w-2 h-2 rounded-full bg-rose-500";
+        text.innerText = message || "Lỗi kết nối API";
+      }
+    }
 
     function openApiConfigModal() {
       document.getElementById("apiConfigInput").value = SCRIPT_URL;
@@ -314,26 +340,98 @@
       document.getElementById("apiConfigModal").classList.add("hidden");
     }
 
+    // Cơ chế gọi GET lai (Fetch text/plain và JSONP Fallback chống hoàn toàn lỗi CORS)
+    function callGasApiGet(actionParams) {
+      return new Promise(async (resolve, reject) => {
+        if (!SCRIPT_URL) return reject("Chưa cài đặt SCRIPT_URL");
+
+        // Cách 1: Thử bằng Fetch tiêu chuẩn với redirect: follow
+        try {
+          const res = await fetch(`${SCRIPT_URL}?${actionParams}`, { method: "GET", redirect: "follow" });
+          const json = await res.json();
+          return resolve(json);
+        } catch (fetchErr) {
+          console.warn("Fetch bị chặn CORS, tự động chuyển sang JSONP...", fetchErr);
+        }
+
+        // Cách 2: Tự động dùng JSONP script injection khi bị chặn trên trình duyệt
+        const callbackName = "gas_cb_" + Math.round(100000 * Math.random());
+        window[callbackName] = function(data) {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          resolve(data);
+        };
+        const script = document.createElement("script");
+        script.src = `${SCRIPT_URL}?${actionParams}&callback=${callbackName}`;
+        script.onerror = function() {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          reject("Không thể kết nối đến Web App qua JSONP");
+        };
+        document.body.appendChild(script);
+      });
+    }
+
+    // Cơ chế gọi POST an toàn (Chống Preflight OPTIONS của CORS)
+    async function callGasApiPost(actionName, postData) {
+      if (!SCRIPT_URL) throw new Error("Chưa cài đặt SCRIPT_URL");
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: actionName, data: postData }),
+        redirect: "follow"
+      });
+      return await res.json();
+    }
+
+    async function testConnectionNow() {
+      const url = document.getElementById("apiConfigInput").value.trim();
+      const btn = document.getElementById("btnTestApi");
+      if (!url.startsWith("https://script.google.com/macros/s/")) {
+        alert("URL không đúng định dạng!");
+        return;
+      }
+      btn.innerText = "Đang thử...";
+      btn.disabled = true;
+
+      const oldUrl = SCRIPT_URL;
+      SCRIPT_URL = url;
+
+      try {
+        const json = await callGasApiGet("action=getRecentNotifications");
+        if (json && json.status === "success") {
+          alert("Tuyệt vời! Kết nối đến Google Apps Script thành công 100%!");
+        } else {
+          alert("Máy chủ phản hồi nhưng dữ liệu chưa sẵn sàng: " + JSON.stringify(json));
+        }
+      } catch (err) {
+        alert("Lỗi kết nối: Không thể gọi đến Web App.\nBạn hãy kiểm tra: Bản triển khai đã chọn 'Who has access: Anyone' và URL kết thúc bằng '/exec' chưa nhé.");
+        SCRIPT_URL = oldUrl;
+      } finally {
+        btn.innerText = "Kiểm tra kết nối";
+        btn.disabled = false;
+      }
+    }
+
     function saveApiConfigUrl() {
       const val = document.getElementById("apiConfigInput").value.trim();
       if (!val.startsWith("https://script.google.com/macros/s/")) {
-        alert("Vui lòng dán đúng định dạng URL Web App (bắt đầu bằng https://script.google.com/macros/s/...)");
+        alert("URL phải bắt đầu bằng https://script.google.com/macros/s/...");
         return;
       }
       SCRIPT_URL = val;
       localStorage.setItem("10A12_SCRIPT_URL", val);
-      alert("Đã lưu URL API thành công! Đang tải lại dữ liệu...");
+      alert("Đã lưu URL thành công!");
       closeApiConfigModal();
       location.reload();
     }
 
-    // 2. Chuyển Tab
     function switchTab(tabId) {
       document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
       document.getElementById(tabId).classList.remove("hidden");
     }
 
-    // 3. Thời khóa biểu chuẩn mới (Sáng: 06:45–11:20 | Chiều: 13:45–16:40)
+    // Thời gian biểu chuẩn
     const SCHEDULE_CONFIG = [
       { key: 'T2_SANG', day: 1, isMorning: true, dayName: 'Thứ 2', session: 'Sáng', time: '06:45 - 11:20', team: 'Tổ 1' },
       { key: 'T2_CHIEU', day: 1, isMorning: false, dayName: 'Thứ 2', session: 'Chiều', time: '13:45 - 16:40', team: 'Tổ 2' },
@@ -368,18 +466,30 @@
     let classFundList = [];
     let allStudents = [];
 
-    // 4. Nạp vi phạm nề nếp
-    async function loadWeeklyOverview() {
+    async function loadAllAppData() {
       if (!SCRIPT_URL) return;
       try {
-        const res = await fetch(`${SCRIPT_URL}?action=getRecentNotifications`);
-        const json = await res.json();
-        if (json.status === "success") {
+        await Promise.all([
+          loadWeeklyOverview(),
+          loadAttendanceList(),
+          loadFundData(),
+          loadStudentsFull()
+        ]);
+        updateConnectionBadge(true);
+      } catch (e) {
+        updateConnectionBadge(false, "Lỗi nạp dữ liệu");
+      }
+    }
+
+    async function loadWeeklyOverview() {
+      try {
+        const json = await callGasApiGet("action=getRecentNotifications");
+        if (json && json.status === "success") {
           weeklyViolations = json.data.filter(v => Number(v.points) < 0 && !v.note?.includes("[ĐÃ HỦY]"));
           document.getElementById("totalViolationsCount").innerText = weeklyViolations.length;
           renderViolationTable();
         }
-      } catch (e) { console.warn("Lỗi nạp vi phạm:", e); }
+      } catch (e) {}
     }
 
     function renderViolationTable() {
@@ -408,31 +518,24 @@
       const pin = prompt("Nhập mã PIN GVCN để hoàn điểm:");
       if (!pin) return;
       try {
-        const res = await fetch(SCRIPT_URL, {
-          method: "POST",
-          body: JSON.stringify({ action: "revokeScore", data: { pin, logTime, studentId, pointsRevert: points } })
-        });
-        const data = await res.json();
+        const data = await callGasApiPost("revokeScore", { pin, logTime, studentId, pointsRevert: points });
         alert(data.message);
         loadWeeklyOverview();
       } catch (e) { alert("Lỗi kết nối!"); }
     }
 
-    // 5. Điểm danh
     async function loadAttendanceList() {
-      if (!SCRIPT_URL) return;
       const dateVal = document.getElementById("attendDateInput").value || new Date().toISOString().slice(0, 10);
       const dateVN = dateVal.split('-').reverse().join('/');
       const sessionKey = document.getElementById("attendSessionSelect").value;
 
       try {
-        const res = await fetch(`${SCRIPT_URL}?action=getAttendanceData&date=${encodeURIComponent(dateVN)}&sessionKey=${encodeURIComponent(sessionKey)}`);
-        const json = await res.json();
-        if (json.status === "success") {
+        const json = await callGasApiGet(`action=getAttendanceData&date=${encodeURIComponent(dateVN)}&sessionKey=${encodeURIComponent(sessionKey)}`);
+        if (json && json.status === "success") {
           attendanceList = json.data;
           renderAttendanceRows();
         }
-      } catch (e) { console.warn("Lỗi nạp điểm danh:", e); }
+      } catch (e) {}
     }
 
     function renderAttendanceRows() {
@@ -477,17 +580,10 @@
       const sessionKey = document.getElementById("attendSessionSelect").value;
 
       try {
-        const res = await fetch(SCRIPT_URL, {
-          method: "POST",
-          body: JSON.stringify({
-            action: "saveAttendanceWithAntiDuplicate",
-            data: { pin, date: dateVN, sessionKey, studentId, newStatus }
-          })
-        });
-        const data = await res.json();
+        const data = await callGasApiPost("saveAttendanceWithAntiDuplicate", { pin, date: dateVN, sessionKey, studentId, newStatus });
         alert(data.message);
         if (data.status === "success") loadAttendanceList();
-      } catch (e) { alert("Lỗi mạng!"); }
+      } catch (e) { alert("Lỗi kết nối!"); }
     }
 
     function copyAbsenceNotice() {
@@ -503,29 +599,23 @@
       navigator.clipboard.writeText(msg).then(() => alert("Đã sao chép báo cáo vắng!"));
     }
 
-    // 6. Sổ Quỹ
     async function loadFundData() {
-      if (!SCRIPT_URL) return;
       try {
-        const [resSummary, resList] = await Promise.all([
-          fetch(`${SCRIPT_URL}?action=getFundStatement`),
-          fetch(`${SCRIPT_URL}?action=getFundCollectionList&collectionName=Quỹ Kỳ 1`)
-        ]);
-        const sumJson = await resSummary.json();
-        const listJson = await resList.json();
+        const sumJson = await callGasApiGet("action=getFundStatement");
+        const listJson = await callGasApiGet("action=getFundCollectionList&collectionName=Quỹ Kỳ 1");
 
-        if (sumJson.status === "success") {
+        if (sumJson && sumJson.status === "success") {
           const fmt = n => new Intl.NumberFormat('vi-VN').format(n) + " đ";
           document.getElementById("sumIncome").innerText = fmt(sumJson.summary.totalIncome);
           document.getElementById("sumExpense").innerText = fmt(sumJson.summary.totalExpense);
           document.getElementById("currentBalance").innerText = fmt(sumJson.summary.balance);
         }
 
-        if (listJson.status === "success") {
+        if (listJson && listJson.status === "success") {
           classFundList = listJson.data;
           renderFundChecklist();
         }
-      } catch (e) { console.warn("Lỗi nạp quỹ:", e); }
+      } catch (e) {}
     }
 
     function renderFundChecklist() {
@@ -555,29 +645,19 @@
       if (!pin) return;
       const paidStudentIds = classFundList.filter(s => s.paid).map(s => s.id);
       try {
-        const res = await fetch(SCRIPT_URL, {
-          method: "POST",
-          body: JSON.stringify({
-            action: "saveFundCollection",
-            data: { pin, collectionName: "Quỹ Kỳ 1", defaultAmount: 100000, paidStudentIds }
-          })
-        });
-        const data = await res.json();
+        const data = await callGasApiPost("saveFundCollection", { pin, collectionName: "Quỹ Kỳ 1", defaultAmount: 100000, paidStudentIds });
         alert(data.message);
-      } catch (e) { alert("Lỗi mạng!"); }
+      } catch (e) { alert("Lỗi kết nối!"); }
     }
 
-    // 7. Danh sách 45 học sinh thực tế
     async function loadStudentsFull() {
-      if (!SCRIPT_URL) return;
       try {
-        const res = await fetch(`${SCRIPT_URL}?action=getStudentsFull`);
-        const json = await res.json();
-        if (json.status === "success") {
+        const json = await callGasApiGet("action=getStudentsFull");
+        if (json && json.status === "success") {
           allStudents = json.data;
           renderStudentsGrid(allStudents);
         }
-      } catch (e) { console.warn("Lỗi nạp học sinh:", e); }
+      } catch (e) {}
     }
 
     function renderStudentsGrid(list) {
@@ -623,7 +703,6 @@
       renderStudentsGrid(filtered);
     }
 
-    // 8. Đăng nhập phân quyền
     const ROLE_ACCOUNTS = {
       "9999": { title: "Thầy Quốc Mẫn (GVCN)" },
       "1001": { title: "Lớp trưởng" },
@@ -642,7 +721,6 @@
       }
     }
 
-    // 9. Quản lý cài đặt PWA App lên điện thoại
     let deferredPrompt;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -660,29 +738,25 @@
         }
         deferredPrompt = null;
       } else {
-        alert("Để cài đặt trên iPhone/iPad: Bấm nút Chia sẻ (biểu tượng mũi tên hướng lên) -> Chọn 'Thêm vào MH chính'.\nTrên Android: Bấm menu 3 chấm ở góc trình duyệt -> Chọn 'Cài đặt ứng dụng'.");
+        alert("Để cài ứng dụng:\n- Trên iPhone (Safari): Bấm Chia sẻ -> Chọn 'Thêm vào MH chính'.\n- Trên Android (Chrome): Bấm 3 chấm góc phải -> Chọn 'Cài đặt ứng dụng' hoặc 'Thêm vào màn hình chính'.");
       }
     }
 
-    // Đăng ký Service Worker
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').catch(() => {});
       });
     }
 
-    // Khởi tạo hệ thống
     window.addEventListener("DOMContentLoaded", () => {
       document.getElementById("attendDateInput").value = new Date().toISOString().slice(0, 10);
       updateLiveHeader();
 
       if (!SCRIPT_URL) {
+        updateConnectionBadge(false, "Chưa cài URL");
         setTimeout(openApiConfigModal, 600);
       } else {
-        loadWeeklyOverview();
-        loadAttendanceList();
-        loadFundData();
-        loadStudentsFull();
+        loadAllAppData();
       }
     });
   </script>

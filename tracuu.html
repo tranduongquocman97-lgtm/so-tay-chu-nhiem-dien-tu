@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Cổng Tra Cứu Học Sinh 10A12 - K58 THPT số 1 Quang Trung</title>
 
-  <!-- PWA & Biểu tượng dành riêng cho Học sinh -->
+  <!-- PWA & Apple iOS Metadata -->
   <link rel="manifest" href="manifest-hs.json">
   <meta name="theme-color" content="#4F46E5">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="10A12 Tra Cứu">
-  <link rel="apple-touch-icon" href="icon-hs.png">
-  <link rel="icon" type="image/png" href="icon-hs.png">
+  <link rel="apple-touch-icon" href="app_icon_10a12.png">
+  <link rel="icon" type="image/png" href="app_icon_10a12.png">
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -31,9 +31,9 @@
       <i class="fa-solid fa-gear"></i>
     </button>
 
-    <!-- Header -->
+    <!-- Header & Logo Học sinh -->
     <div class="text-center space-y-1.5 border-b border-slate-100 pb-4">
-      <img src="icon-hs.png" alt="Logo 10A12" class="w-14 h-14 rounded-2xl mx-auto shadow-md border border-slate-200">
+      <img src="app_icon_10a12.png" alt="Logo 10A12" class="w-14 h-14 rounded-2xl mx-auto shadow-md border border-slate-200 object-cover">
       <span class="text-[10px] font-extrabold uppercase text-indigo-600 tracking-wider block">Trường THPT số 1 Quang Trung</span>
       <h1 class="text-lg font-extrabold text-slate-900 tracking-tight">TRA CỨU HỌC SINH LỚP 10A12</h1>
       <p class="text-xs text-slate-500">Đăng nhập tài khoản: <b>hoten.k58qt</b></p>
@@ -64,7 +64,7 @@
 
       <!-- Nút Cài đặt App cho Học sinh -->
       <button id="pwaInstallHsBtn" onclick="installPwaAppHs()" class="hidden w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 border border-slate-200">
-        <i class="fa-solid fa-download text-indigo-600"></i> Cài Ứng Dụng Vào Màn Hình Chính
+        <i class="fa-solid fa-download text-indigo-600"></i> Cài Ứng Dụng Vào Điện Thoại
       </button>
     </div>
 
@@ -163,6 +163,48 @@
       }
     }
 
+    // Cơ chế gọi GET an toàn
+    function callGasApiGet(actionParams) {
+      return new Promise(async (resolve, reject) => {
+        if (!SCRIPT_URL) return reject("Chưa cài đặt SCRIPT_URL");
+
+        try {
+          const res = await fetch(`${SCRIPT_URL}?${actionParams}`, { method: "GET", redirect: "follow" });
+          const json = await res.json();
+          return resolve(json);
+        } catch (fetchErr) {
+          console.warn("Fetch GET bị chặn, chuyển JSONP...", fetchErr);
+        }
+
+        const callbackName = "gas_cb_" + Math.round(100000 * Math.random());
+        window[callbackName] = function(data) {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          resolve(data);
+        };
+        const script = document.createElement("script");
+        script.src = `${SCRIPT_URL}?${actionParams}&callback=${callbackName}`;
+        script.onerror = function() {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          reject("Lỗi mạng JSONP");
+        };
+        document.body.appendChild(script);
+      });
+    }
+
+    // Cơ chế gọi POST an toàn
+    async function callGasApiPost(actionName, postData) {
+      if (!SCRIPT_URL) throw new Error("Chưa cài đặt SCRIPT_URL");
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: actionName, data: postData }),
+        redirect: "follow"
+      });
+      return await res.json();
+    }
+
     let activeSessionStudent = null;
 
     async function handleStudentLogin() {
@@ -184,18 +226,9 @@
       btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang xác thực...`;
 
       try {
-        const res = await fetch(SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "studentLogin",
-            data: { username: u, password: p }
-          }),
-          redirect: "follow"
-        });
-        const result = await res.json();
+        const result = await callGasApiPost("studentLogin", { username: u, password: p });
 
-        if (result.status === "success") {
+        if (result && result.status === "success") {
           activeSessionStudent = result.student;
           showStudentData(result.student);
 
@@ -207,7 +240,7 @@
             }, 600);
           }
         } else {
-          alert(result.message);
+          alert(result ? result.message : "Đăng nhập thất bại");
         }
       } catch (err) {
         alert("Lỗi kết nối máy chủ tra cứu. Vui lòng kiểm tra lại URL API!");
@@ -227,9 +260,8 @@
       document.getElementById("resScore").innerText = `${st.score}đ`;
 
       try {
-        const res = await fetch(`${SCRIPT_URL}?action=lookupStudent&query=${encodeURIComponent(st.id)}`);
-        const json = await res.json();
-        if (json.status === "success" && json.data) {
+        const json = await callGasApiGet(`action=lookupStudent&query=${encodeURIComponent(st.id)}`);
+        if (json && json.status === "success" && json.data) {
           const d = json.data;
           const fundEl = document.getElementById("resFund");
           fundEl.innerText = d.fundPaid ? "Đã nộp quỹ đầy đủ" : "Chưa hoàn thành quỹ";
@@ -251,7 +283,7 @@
             });
           }
         }
-      } catch (e) { console.warn("Lỗi tải chi tiết:", e); }
+      } catch (e) {}
     }
 
     function logoutStudent() {
@@ -296,20 +328,11 @@
       btn.innerText = "Đang lưu...";
 
       try {
-        const res = await fetch(SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "changeStudentPin",
-            data: {
-              username: activeSessionStudent.username,
-              oldPinOrPass: oldVal,
-              newPin: newVal
-            }
-          }),
-          redirect: "follow"
+        const result = await callGasApiPost("changeStudentPin", {
+          username: activeSessionStudent.username,
+          oldPinOrPass: oldVal,
+          newPin: newVal
         });
-        const result = await res.json();
         alert(result.message);
         if (result.status === "success") {
           closeChangePinModal();
@@ -322,7 +345,6 @@
       }
     }
 
-    // Quản lý PWA cho Học sinh
     let deferredPromptHs;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -336,7 +358,7 @@
         deferredPromptHs.prompt();
         deferredPromptHs = null;
       } else {
-        alert("Để cài đặt trên iPhone: Bấm nút Chia sẻ -> Chọn 'Thêm vào MH chính'.\nTrên Android: Bấm menu 3 chấm ở góc trên -> Chọn 'Thêm vào màn hình chính'.");
+        alert("Để cài ứng dụng:\n- Trên iPhone (Safari): Bấm Chia sẻ -> Chọn 'Thêm vào MH chính'.\n- Trên Android (Chrome): Bấm 3 chấm góc phải -> Chọn 'Thêm vào màn hình chính'.");
       }
     }
 
