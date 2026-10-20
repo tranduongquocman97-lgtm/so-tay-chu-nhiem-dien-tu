@@ -41,6 +41,15 @@
       }
     }
   </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('PWA Service Worker đã sẵn sàng:', reg.scope))
+        .catch(err => console.error('Lỗi Service Worker:', err));
+    });
+  }
+</script>
   <style>
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
