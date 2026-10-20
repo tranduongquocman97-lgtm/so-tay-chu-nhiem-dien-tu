@@ -1,18 +1,21 @@
-const CACHE_NAME = "10a12-pwa-v4";
+const CACHE_NAME = "10a12-pwa-v7";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
+  "./app.js",
   "./tracuu.html",
   "./manifest.json",
   "./manifest-hs.json",
-  "./icon-gvcn.png",
-  "./icon-hs.png",
+  "./app_icon_gvcn.png",
+  "./app_icon_10a12.png",
   "https://cdn.tailwindcss.com",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
+  e.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
   self.skipWaiting();
 });
 
