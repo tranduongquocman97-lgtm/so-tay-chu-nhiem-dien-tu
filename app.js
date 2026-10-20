@@ -1378,7 +1378,41 @@ function switchTab(tabId) {
   if (tabId === 'tab-fund') loadFundData();
   if (tabId === 'tab-students') loadStudentsFull();
 }
+// ==================== TỰ ĐỘNG CẬP NHẬT PWA & SERVICE WORKER NGẦM ====================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      // Kiểm tra khi có bản cập nhật mới trên máy chủ GitHub Pages
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // Hiển thị thông báo yêu cầu cập nhật nhẹ nhàng
+              const isUpdateAccepted = confirm("✨ Sổ tay 10A12 đã có phiên bản cập nhật mới (Logo/Tính năng mới). Bấm OK để cập nhật ngay!");
+              if (isUpdateAccepted) {
+                // Kích hoạt worker mới và tải lại trang ngay lập tức
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+                window.location.reload();
+              }
+            }
+          });
+        }
+      });
+    }).catch(err => {
+      console.warn("Service Worker đăng ký không thành công:", err);
+    });
+  });
 
+  // Đảm bảo reload ngay khi service worker mới chiếm quyền điều khiển
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+}
 // Khởi chạy tự động ngay khi mở trang
 window.addEventListener("DOMContentLoaded", () => {
   const today = new Date();
