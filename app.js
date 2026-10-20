@@ -1361,22 +1361,50 @@ async function loadAllAppData() {
   }
 }
 
+// ==================== ĐIỀU HƯỚNG TABS ĐỒNG BỘ DESKTOP & MOBILE ====================
 function switchTab(tabId) {
+  // Ẩn tất cả các nội dung tab
   document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
-  document.getElementById(tabId).classList.remove("hidden");
+  const targetContent = document.getElementById(tabId);
+  if (targetContent) targetContent.classList.remove("hidden");
 
-  document.querySelectorAll(".tab-btn").forEach(btn => {
-    btn.className = "tab-btn shrink-0 px-4 py-2.5 text-slate-300 font-bold hover:bg-white/5 rounded-xl text-xs flex items-center gap-2 transition";
+  // 1. Cập nhật Sidebar trên Máy tính
+  const desktopTabs = ['overview', 'seating', 'attendance', 'fund', 'students'];
+  desktopTabs.forEach(t => {
+    const btn = document.getElementById(`sidebar-tab-${t}`);
+    if (btn) {
+      if (`tab-${t}` === tabId) {
+        btn.className = "w-full px-3.5 py-3 rounded-2xl bg-brand-600 text-white font-black text-xs flex items-center gap-3 transition shadow-glow-indigo text-left";
+      } else {
+        btn.className = "w-full px-3.5 py-3 rounded-2xl text-slate-300 hover:bg-white/5 font-bold text-xs flex items-center gap-3 transition text-left";
+      }
+    }
   });
-  const activeNav = document.getElementById(`nav-${tabId}`);
-  if (activeNav) {
-    activeNav.className = "tab-btn shrink-0 px-4 py-2.5 bg-brand-600 text-white font-black rounded-xl shadow-glow-indigo text-xs flex items-center gap-2 transition";
-  }
 
+  // 2. Cập nhật Bottom Bar trên Điện thoại
+  desktopTabs.forEach(t => {
+    const mBtn = document.getElementById(`mobile-tab-${t}`);
+    if (mBtn) {
+      const icon = mBtn.querySelector('i');
+      const text = mBtn.querySelector('span');
+      if (`tab-${t}` === tabId) {
+        mBtn.className = "flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-sky-400 transition";
+        if (text) text.className = "text-[10px] font-black";
+      } else {
+        mBtn.className = "flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-400 hover:text-white transition";
+        if (text) text.className = "text-[10px] font-medium";
+      }
+    }
+  });
+
+  // Nạp dữ liệu đặc thù theo từng tab
   if (tabId === 'tab-seating') renderSeatingChart();
   if (tabId === 'tab-attendance') loadAttendanceList();
   if (tabId === 'tab-fund') loadFundData();
   if (tabId === 'tab-students') loadStudentsFull();
+
+  // Tự động cuộn mượt lên đầu trang khi chuyển tab trên điện thoại
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 // ==================== TỰ ĐỘNG CẬP NHẬT PWA & SERVICE WORKER NGẦM ====================
 if ('serviceWorker' in navigator) {
