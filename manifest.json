@@ -1,8 +1,10 @@
 {
+  "id": "./index.html",
+  "start_url": "./index.html",
+  "scope": "./",
   "name": "Sổ Tay Chủ Nhiệm 10A12 - K58-QT",
   "short_name": "10A12 GVCN",
-  "start_url": "./index.html",
-  "id": "./index.html",
+  "description": "Sổ tay điều hành nề nếp, điểm danh và quỹ lớp 10A12",
   "display": "standalone",
   "background_color": "#070B19",
   "theme_color": "#070B19",

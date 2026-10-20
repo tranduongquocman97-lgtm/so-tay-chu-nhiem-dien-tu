@@ -2,11 +2,11 @@
 <html lang="vi" class="h-full bg-[#070B19]">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Cổng Tra Cứu Học Sinh 10A12 - K58 THPT số 1 Quang Trung</title>
 
   <!-- PWA & Apple iOS Metadata -->
-  <link rel="manifest" href="manifest-hs.json">
+  <link rel="manifest" href="./manifest-hs.json">
   <meta name="theme-color" content="#070B19">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -42,7 +42,6 @@
     }
   </script>
   <style>
-    /* Viền mỏng 1px xanh Sky thanh mảnh & dịu mắt */
     .glass-card {
       background: rgba(11, 19, 43, 0.72);
       backdrop-filter: blur(16px);
@@ -73,14 +72,11 @@
 
 <body class="min-h-full font-sans bg-gradient-to-br from-[#050814] via-[#070B19] to-[#0B1536] text-slate-100 antialiased p-4 sm:p-6 lg:p-10 flex flex-col justify-center items-center selection:bg-brand-500 selection:text-white relative overflow-x-hidden">
 
-  <!-- Ánh sáng trang trí nền -->
   <div class="fixed -top-40 -left-40 w-96 h-96 bg-sky-500/10 rounded-full blur-[120px] pointer-events-none"></div>
   <div class="fixed -bottom-40 -right-40 w-96 h-96 bg-blue-600/15 rounded-full blur-[120px] pointer-events-none"></div>
 
-  <!-- ==================== KHỐI 1: FORM ĐĂNG NHẬP (TRUNG TÂM) ==================== -->
+  <!-- FORM ĐĂNG NHẬP -->
   <div id="loginFormSection" class="w-full max-w-md glass-card rounded-3xl p-6 sm:p-8 space-y-6 relative z-10 my-auto">
-    
-    <!-- Logo & Header -->
     <div class="text-center space-y-2 border-b border-sky-400/20 pb-5">
       <div class="relative inline-block">
         <img src="app_icon_10a12.png" alt="Logo 10A12" class="w-16 h-16 rounded-2xl mx-auto shadow-glow-indigo border border-sky-400/40 object-cover">
@@ -89,11 +85,10 @@
       <div>
         <span class="text-[10px] font-black uppercase text-sky-400 tracking-widest block">THPT SỐ 1 QUANG TRUNG</span>
         <h1 class="text-lg sm:text-xl font-black text-white tracking-tight mt-0.5">CỔNG TRA CỨU HỌC SINH 10A12</h1>
-        <p class="text-xs text-slate-400 font-medium mt-1">Đăng nhập tài khoản định dạng: <b class="text-sky-300">hoten.k58qt</b></p>
+        <p class="text-xs text-slate-400 font-medium mt-1">Đăng nhập tài khoản: <b class="text-sky-300">hoten.k58qt</b></p>
       </div>
     </div>
 
-    <!-- Form Nhập Liệu -->
     <div class="space-y-4">
       <div>
         <label class="text-xs font-extrabold text-slate-300 block mb-1.5 flex items-center justify-between">
@@ -116,7 +111,7 @@
           <i class="fa-solid fa-key absolute right-3.5 top-3.5 text-slate-400 text-xs"></i>
         </div>
         <p class="text-[10px] text-slate-400 mt-1.5 italic flex items-center gap-1">
-          <i class="fa-solid fa-circle-info text-sky-400 text-[10px]"></i> Học sinh đăng nhập bằng mật khẩu mặc định hoặc PIN 4 số cá nhân.
+          <i class="fa-solid fa-circle-info text-sky-400 text-[10px]"></i> Dùng mật khẩu mặc định hoặc mã PIN cá nhân 4 số.
         </p>
       </div>
 
@@ -124,18 +119,14 @@
         <i class="fa-solid fa-arrow-right-to-bracket"></i> ĐĂNG NHẬP TRA CỨU
       </button>
 
-      <!-- Nút PWA Install cho Học sinh -->
       <button id="pwaInstallHsBtn" onclick="installPwaAppHs()" class="hidden w-full py-2.5 glass-card text-slate-300 hover:text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2">
         <i class="fa-solid fa-cloud-arrow-down text-sky-400"></i> Cài App Vào Màn Hình Chính
       </button>
     </div>
-
   </div>
 
-  <!-- ==================== KHỐI 2: KẾT QUẢ CÁ NHÂN ==================== -->
+  <!-- KẾT QUẢ CÁ NHÂN -->
   <div id="resultSection" class="hidden w-full max-w-5xl space-y-6 relative z-10">
-    
-    <!-- Top Bar Kết quả -->
     <div class="flex justify-between items-center glass-card px-5 py-3 rounded-2xl">
       <div class="flex items-center gap-2.5">
         <img src="app_icon_10a12.png" alt="Logo" class="w-7 h-7 rounded-lg object-cover border border-sky-400/30">
@@ -151,12 +142,9 @@
       </div>
     </div>
 
-    <!-- Khung chính 2 cột -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-      <!-- CỘT TRÁI (5 Cột) - THẺ HỌC SINH ĐIỆN TỬ GLASS 3D -->
+      <!-- Cột trái: Thẻ học sinh -->
       <div class="lg:col-span-5 space-y-4">
-        
         <div class="glass-id-card rounded-3xl p-6 relative overflow-hidden space-y-5">
           <div class="flex justify-between items-start">
             <div class="space-y-0.5">
@@ -166,7 +154,6 @@
             <span class="px-2.5 py-1 rounded-xl bg-sky-500/20 border border-sky-400/35 text-sky-200 text-[10px] font-black uppercase tracking-wider" id="resTeamBadge">Tổ 1</span>
           </div>
 
-          <!-- Avatar & Họ tên -->
           <div class="flex items-center gap-4 pt-1">
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-sky-400 text-white font-black text-2xl flex items-center justify-center shadow-glow-indigo border border-sky-300/40 shrink-0" id="resAvatarText">
               A
@@ -178,7 +165,6 @@
             </div>
           </div>
 
-          <!-- Chỉ số điểm nề nếp -->
           <div class="pt-4 border-t border-sky-400/20 flex justify-between items-end">
             <div>
               <span class="text-[9px] uppercase font-black text-slate-400 tracking-wider block">Điểm nề nếp tuần này</span>
@@ -198,7 +184,6 @@
           </div>
         </div>
 
-        <!-- Thẻ Tình Trạng Quỹ Lớp -->
         <div class="glass-card rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-emerald-400">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-lg">
@@ -211,12 +196,10 @@
           </div>
           <span class="text-xs font-black text-emerald-400 bg-emerald-500/20 border border-emerald-400/35 px-2.5 py-1 rounded-xl" id="resFundPill">100.000 đ</span>
         </div>
-
       </div>
 
-      <!-- CỘT PHẢI (7 Cột) - LỊCH SỬ VI PHẠM -->
+      <!-- Cột phải: Nhật ký vi phạm -->
       <div class="lg:col-span-7 space-y-4">
-        
         <div class="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
           <div class="flex justify-between items-center border-b border-sky-400/20 pb-3">
             <div>
@@ -233,7 +216,6 @@
           </div>
         </div>
 
-        <!-- Quy định Chế tài & Lao động phạt tuần kế tiếp -->
         <div class="glass-card rounded-2xl p-4 border border-amber-400/30 bg-amber-500/5 space-y-2">
           <div class="flex items-center gap-2 text-amber-300 font-extrabold text-xs">
             <i class="fa-solid fa-triangle-exclamation"></i>
@@ -245,14 +227,11 @@
             <li><b>Mức 3 (Trừ từ 10đ trở lên):</b> Vệ sinh công ích bồn hoa khuôn viên trường suốt tuần.</li>
           </ul>
         </div>
-
       </div>
-
     </div>
-
   </div>
 
-  <!-- ==================== MODAL ĐỔI MÃ PIN CÁ NHÂN ==================== -->
+  <!-- MODAL ĐỔI PIN CÁ NHÂN -->
   <div id="changePinModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
     <div class="glass-card-light rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-slate-900">
       <div class="flex justify-between items-center border-b border-slate-200 pb-3">
@@ -282,12 +261,9 @@
     </div>
   </div>
 
-  <!-- ==================== SCRIPT ĐIỀU HÀNH THÔNG MINH (CHẠY NGẦM 100%) ==================== -->
   <script>
-    // DÁN ĐƯỜNG DẪN WEB APP GOOGLE APPS SCRIPT CỦA BẠN VÀO DÒNG DƯỚI ĐÂY:
     const SCRIPT_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1ITYoi_wldFpc/exec";
 
-    // Cơ chế gọi GET kép chống CORS trên mọi trình duyệt
     function callGasApiGet(actionParams) {
       return new Promise(async (resolve, reject) => {
         try {
@@ -295,7 +271,7 @@
           const json = await res.json();
           return resolve(json);
         } catch (fetchErr) {
-          console.warn("Fetch bị chặn CORS, tự động chuyển sang JSONP...", fetchErr);
+          console.warn("Chuyển sang JSONP...", fetchErr);
         }
 
         const callbackName = "gas_cb_" + Math.round(100000 * Math.random());
@@ -309,13 +285,12 @@
         script.onerror = function() {
           delete window[callbackName];
           document.body.removeChild(script);
-          reject("Lỗi kết nối máy chủ qua JSONP");
+          reject("Lỗi kết nối qua JSONP");
         };
         document.body.appendChild(script);
       });
     }
 
-    // Cơ chế gọi POST chống chặn Preflight OPTIONS
     async function callGasApiPost(actionName, postData) {
       const res = await fetch(SCRIPT_URL, {
         method: "POST",
@@ -382,7 +357,6 @@
         if (json && json.status === "success" && json.data) {
           const d = json.data;
 
-          // Tiền quỹ
           const fundEl = document.getElementById("resFund");
           const fundPill = document.getElementById("resFundPill");
           if (d.fundPaid) {
@@ -395,10 +369,8 @@
             fundPill.className = "text-xs font-black text-rose-400 bg-rose-500/20 border border-rose-400/35 px-2.5 py-1 rounded-xl";
           }
 
-          // Xếp loại TT22
           document.getElementById("resRank").innerText = d.predictedRank;
 
-          // Vi phạm
           const vBox = document.getElementById("resViolationsList");
           const countBadge = document.getElementById("violationCountBadge");
           vBox.innerHTML = "";
@@ -488,7 +460,6 @@
       }
     }
 
-    // PWA Install cho Học sinh
     let deferredPromptHs;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -502,13 +473,15 @@
         deferredPromptHs.prompt();
         deferredPromptHs = null;
       } else {
-        alert("Để cài ứng dụng:\n- Trên iPhone (Safari): Bấm Chia sẻ -> Chọn 'Thêm vào MH chính'.\n- Trên Android (Chrome): Bấm 3 chấm góc phải -> Chọn 'Thêm vào màn hình chính'.");
+        alert("Để cài ứng dụng:\n• Trên iPhone (Safari): Bấm nút Chia sẻ -> Chọn 'Thêm vào MH chính'.\n• Trên Android (Chrome): Bấm 3 chấm góc phải -> Chọn 'Cài đặt ứng dụng' hoặc 'Thêm vào màn hình chính'.");
       }
     }
 
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(() => {});
+        navigator.serviceWorker.register('./sw.js', { scope: './' })
+          .then(reg => console.log('SW PWA HS Ready:', reg.scope))
+          .catch(err => console.error('SW PWA HS Failed:', err));
       });
     }
   </script>

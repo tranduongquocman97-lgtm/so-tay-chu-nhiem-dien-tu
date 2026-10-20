@@ -1,11 +1,8 @@
 /**
- * ==============================================================================
  * BỘ NÃO ĐIỀU HÀNH TRUNG TÂM SỔ TAY CHỦ NHIỆM 10A12 (K58-QT)
- * Tệp: app.js (Chạy ngầm 100%, không hiển thị hộp thoại hỏi URL)
- * ==============================================================================
+ * Tệp: app.js
  */
 
-// 1. DÁN ĐƯỜNG DẪN WEB APP GOOGLE APPS SCRIPT CỦA BẠN VÀO DÒNG DƯỚI ĐÂY:
 const SCRIPT_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1ITYoi_wldFpc/exec";
 
 let activeUserRole = { role: "GVCN", name: "Thầy Quốc Mẫn", pin: "9999", team: "Tất cả" };
@@ -61,7 +58,7 @@ const THI_DUA_RULES = {
   ]
 };
 
-// ==================== KẾT NỐI API KÉP (FETCH & JSONP) ====================
+// ==================== KẾT NỐI API ====================
 function callGasApiGet(actionParams) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -103,7 +100,7 @@ function formatDateTimeVN(dateObj) {
   return dateObj.toLocaleString("vi-VN");
 }
 
-// ==================== PHÂN QUYỀN MÃ PIN ====================
+// ==================== PHÂN QUYỀN PIN ====================
 const ROLE_ACCOUNTS = {
   "9999": { role: "GVCN", title: "Thầy Quốc Mẫn (GVCN)", team: "Tất cả" },
   "1001": { role: "LopTruong", title: "Tấn An (Lớp trưởng)", team: "Tất cả" },
@@ -120,20 +117,28 @@ function executeLoginPin() {
   const pin = document.getElementById("globalPinInput").value.trim();
   if (ROLE_ACCOUNTS[pin]) {
     activeUserRole = { ...ROLE_ACCOUNTS[pin], pin: pin };
-    document.getElementById("userDisplayName").innerText = activeUserRole.title;
+    
+    const roleDesktop = document.getElementById("roleDutyText");
+    const roleMobile = document.getElementById("roleDutyTextMobile");
+    if (roleDesktop) roleDesktop.innerText = activeUserRole.title;
+    if (roleMobile) roleMobile.innerText = activeUserRole.title;
+
     document.getElementById("authModal").classList.add("hidden");
 
-    const dutyText = document.getElementById("roleDutyText");
+    const btnMatrix = document.getElementById("btnOpenMatrixSidebar");
+    const btnMatrixM = document.getElementById("btnOpenMatrixMobile");
+
     if (activeUserRole.role === "ToTruong") {
       const target = crossMatrix[activeUserRole.team] || "Tổ khác";
-      dutyText.innerText = `${activeUserRole.title} ➔ Chấm chéo: [${target}]`;
-      document.getElementById("btnOpenMatrix").classList.add("hidden");
+      if (roleDesktop) roleDesktop.innerText = `${activeUserRole.title} ➔ [${target}]`;
+      if (btnMatrix) btnMatrix.classList.add("hidden");
+      if (btnMatrixM) btnMatrixM.classList.add("hidden");
     } else if (activeUserRole.role === "GVCN") {
-      dutyText.innerText = "Toàn quyền GVCN";
-      document.getElementById("btnOpenMatrix").classList.remove("hidden");
+      if (btnMatrix) btnMatrix.classList.remove("hidden");
+      if (btnMatrixM) btnMatrixM.classList.remove("hidden");
     } else {
-      dutyText.innerText = activeUserRole.title;
-      document.getElementById("btnOpenMatrix").classList.add("hidden");
+      if (btnMatrix) btnMatrix.classList.add("hidden");
+      if (btnMatrixM) btnMatrixM.classList.add("hidden");
     }
 
     alert(`Đăng nhập thành công: ${activeUserRole.title}`);
@@ -330,11 +335,11 @@ function togglePerspective() {
   const badge = document.getElementById("perspectiveLabelBadge");
 
   if (isTeacherPerspective) {
-    podium.className = "grid grid-cols-12 gap-3 sm:gap-4 order-first mb-2";
-    badge.innerText = "Góc nhìn: Giáo viên (Bục giảng ở trên)";
+    podium.className = "grid grid-cols-12 gap-2 sm:gap-4 order-first mb-2 min-w-[340px]";
+    badge.innerText = "Góc nhìn: Giáo viên";
   } else {
-    podium.className = "grid grid-cols-12 gap-3 sm:gap-4 order-last mt-2";
-    badge.innerText = "Góc nhìn: Học sinh (Bục giảng ở dưới)";
+    podium.className = "grid grid-cols-12 gap-2 sm:gap-4 order-last mt-2 min-w-[340px]";
+    badge.innerText = "Góc nhìn: Học sinh";
   }
   renderSeatingChart();
 }
@@ -351,21 +356,21 @@ function renderSeatingChart() {
     const rowNumber = 6 - rIndex;
 
     const rowDiv = document.createElement("div");
-    rowDiv.className = "grid grid-cols-12 gap-2 sm:gap-4 items-center";
+    rowDiv.className = "grid grid-cols-12 gap-1.5 sm:gap-4 items-center";
 
     const leftDeskGroup = document.createElement("div");
-    leftDeskGroup.className = "col-span-5 grid grid-cols-2 gap-2";
+    leftDeskGroup.className = "col-span-5 grid grid-cols-2 gap-1.5 sm:gap-2";
     leftDeskGroup.appendChild(createDeskElement(rowData[0], rowData[1], rIndex, 0, 1));
     leftDeskGroup.appendChild(createDeskElement(rowData[2], rowData[3], rIndex, 2, 3));
     rowDiv.appendChild(leftDeskGroup);
 
     const aisleDiv = document.createElement("div");
     aisleDiv.className = "col-span-2 text-center text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center justify-center";
-    aisleDiv.innerHTML = `<span class="px-2 py-0.5 rounded-md glass-card text-sky-300">H${rowNumber}</span>`;
+    aisleDiv.innerHTML = `<span class="px-1.5 sm:px-2 py-0.5 rounded-md glass-card text-sky-300">H${rowNumber}</span>`;
     rowDiv.appendChild(aisleDiv);
 
     const rightDeskGroup = document.createElement("div");
-    rightDeskGroup.className = "col-span-5 grid grid-cols-2 gap-2";
+    rightDeskGroup.className = "col-span-5 grid grid-cols-2 gap-1.5 sm:gap-2";
     rightDeskGroup.appendChild(createDeskElement(rowData[4], rowData[5], rIndex, 4, 5));
     rightDeskGroup.appendChild(createDeskElement(rowData[6], rowData[7], rIndex, 6, 7));
     rowDiv.appendChild(rightDeskGroup);
@@ -385,19 +390,19 @@ function createDeskElement(seat1, seat2, rIndex, c1, c2) {
 function createSeatCell(student, rIndex, cIndex) {
   const cell = document.createElement("div");
   const isEmpty = !student.name;
-  cell.className = `seat-cell p-2 sm:p-2.5 min-h-[58px] flex flex-col justify-center items-center text-center cursor-pointer select-none ${isEmpty ? 'bg-white/[0.01]' : 'bg-white/[0.03]'}`;
+  cell.className = `seat-cell p-1.5 sm:p-2.5 min-h-[52px] sm:min-h-[58px] flex flex-col justify-center items-center text-center cursor-pointer select-none ${isEmpty ? 'bg-white/[0.01]' : 'bg-white/[0.03]'}`;
   cell.draggable = !isEmpty;
 
   if (!isEmpty) {
     cell.innerHTML = `
       <div class="flex items-center gap-1">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block shadow-glow-emerald"></span>
-        <span class="text-xs font-black text-white leading-tight tracking-tight">${student.name}</span>
+        <span class="text-[11px] sm:text-xs font-black text-white leading-tight tracking-tight">${student.name}</span>
       </div>
-      ${student.role ? `<span class="text-[9.5px] font-bold text-sky-300 mt-0.5 leading-none">(${student.role})</span>` : ''}
+      ${student.role ? `<span class="text-[8.5px] sm:text-[9.5px] font-bold text-sky-300 mt-0.5 leading-none">(${student.role})</span>` : ''}
     `;
   } else {
-    cell.innerHTML = `<span class="text-[10px] text-slate-600 font-bold">+ Trống</span>`;
+    cell.innerHTML = `<span class="text-[9px] sm:text-[10px] text-slate-600 font-bold">+ Trống</span>`;
   }
 
   cell.addEventListener("click", () => {
@@ -453,7 +458,7 @@ async function syncSeatingToSheets() {
   }
 }
 
-// ==================== ĐIỂM DANH CHUYÊN CẦN ====================
+// ==================== ĐIỂM DANH CHUYÊN CẦN (ĐÃ BỎ 100% POPUP GHI CHÚ) ====================
 let attendanceList = [];
 let currentAttendTeam = 'ALL';
 
@@ -473,11 +478,11 @@ async function loadAttendanceList() {
 
       if (isAttendanceLockedNow) {
         badge.className = "px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 bg-rose-500/20 text-rose-300 border border-rose-500/35";
-        badge.innerHTML = `<i class="fa-solid fa-lock"></i> Đã khóa sổ (Sau 07:15 / 14:15)`;
+        badge.innerHTML = `<i class="fa-solid fa-lock"></i> Đã khóa sổ`;
         banner.classList.remove("hidden");
       } else {
         badge.className = "px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-400/35";
-        badge.innerHTML = `<i class="fa-solid fa-lock-open"></i> Đang mở sổ`;
+        badge.innerHTML = `<i class="fa-solid fa-lock-open"></i> Mở sổ`;
         banner.classList.add("hidden");
       }
 
@@ -499,19 +504,18 @@ function renderAttendanceRows() {
   const isDisabled = isAttendanceLockedNow && activeUserRole.role !== "GVCN";
 
   container.innerHTML = filtered.map(st => `
-    <div class="p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-white/[0.04] transition">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-400/30 text-sky-300 font-black flex items-center justify-center text-xs">
+    <div class="p-3 sm:p-3.5 flex flex-wrap items-center justify-between gap-2.5 hover:bg-white/[0.04] transition">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-sky-500/10 border border-sky-400/30 text-sky-300 font-black flex items-center justify-center text-xs shrink-0">
           ${st.hoTen.split(' ').pop().charAt(0)}
         </div>
         <div>
           <span class="font-extrabold text-white text-xs">${st.hoTen}</span>
-          <span class="text-[10px] text-sky-300 bg-sky-500/20 border border-sky-400/30 px-1.5 py-0.2 rounded font-bold ml-1.5">${st.to}</span>
-          <span class="text-[10px] text-slate-400 block font-mono mt-0.5">${st.reason ? 'Ghi chú: ' + st.reason : ''}</span>
+          <span class="text-[9.5px] text-sky-300 bg-sky-500/20 border border-sky-400/30 px-1.5 py-0.2 rounded font-bold ml-1">${st.to}</span>
         </div>
       </div>
 
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1 flex-wrap sm:flex-nowrap">
         <button onclick="handleAttendanceClick('${st.id}', 'CO_MAT')" ${isDisabled ? 'disabled' : ''} class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${st.status === 'CO_MAT' ? 'bg-emerald-500 text-white shadow-glow-emerald' : 'glass-card text-slate-400 hover:text-white'} ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}">Có mặt</button>
         <button onclick="handleAttendanceClick('${st.id}', 'DI_TRE')" ${isDisabled ? 'disabled' : ''} class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${st.status === 'DI_TRE' ? 'bg-amber-500 text-white shadow-md' : 'glass-card text-slate-400 hover:text-white'} ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}">Đi trễ (-10đ)</button>
         <button onclick="handleAttendanceClick('${st.id}', 'VANG_PHEP')" ${isDisabled ? 'disabled' : ''} class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${st.status === 'VANG_PHEP' ? 'bg-blue-600 text-white shadow-md' : 'glass-card text-slate-400 hover:text-white'} ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}">Có phép</button>
@@ -521,17 +525,18 @@ function renderAttendanceRows() {
   `).join('');
 }
 
+// LƯU NGAY LẬP TỨC - KHÔNG MỞ BẤT KỲ PROMPT/ALERT NÀO
 async function handleAttendanceClick(studentId, newStatus) {
   if (activeUserRole.role !== "GVCN" && activeUserRole.role !== "LopTruong" && activeUserRole.role !== "BiThu") {
     alert("Chỉ Lớp trưởng, Lớp phó Học tập hoặc GVCN mới có quyền điểm danh!");
     return;
   }
 
-  // Ghi chú không bắt buộc (bấm Hủy hoặc để trống đều chấp nhận)
-  let reason = "";
-  if (newStatus === "VANG_PHEP" || newStatus === "KHONG_PHEP" || newStatus === "DI_TRE") {
-    const inputPrompt = prompt(`Nhập ghi chú lý do cho trạng thái [${newStatus}] (Không bắt buộc - có thể để trống):`);
-    reason = inputPrompt !== null ? inputPrompt.trim() : "";
+  // Cập nhật giao diện tạm thời ngay để tạo cảm giác phản hồi tức thì
+  const target = attendanceList.find(s => s.id === studentId);
+  if (target) {
+    target.status = newStatus;
+    renderAttendanceRows();
   }
 
   const dateVal = document.getElementById("attendDateInput").value || new Date().toISOString().slice(0, 10);
@@ -545,16 +550,17 @@ async function handleAttendanceClick(studentId, newStatus) {
       sessionKey: sessionKey,
       studentId: studentId,
       newStatus: newStatus,
-      reason: reason
+      reason: ""
     });
 
-    alert(res.message);
     if (res.status === "success") {
-      loadAttendanceList();
       loadWeeklyOverview();
+    } else {
+      alert(res.message);
+      loadAttendanceList();
     }
   } catch (e) {
-    alert("Lỗi kết nối máy chủ điểm danh!");
+    console.error("Lỗi lưu chuyên cần:", e);
   }
 }
 
@@ -574,7 +580,7 @@ function filterAttendTeam(team) {
   currentAttendTeam = team;
   ['ALL', 'Tổ 1', 'Tổ 2', 'Tổ 3', 'Tổ 4'].forEach(t => {
     const btn = document.getElementById(`attTeam-${t}`);
-    if (btn) btn.className = (t === team) ? "px-3.5 py-1.5 bg-brand-600 text-white font-black text-xs rounded-xl shadow-glow-indigo" : "px-3 py-1.5 glass-card text-slate-300 font-bold text-xs rounded-xl";
+    if (btn) btn.className = (t === team) ? "shrink-0 px-3 py-1.5 bg-brand-600 text-white font-black text-xs rounded-xl shadow-glow-indigo" : "shrink-0 px-2.5 py-1.5 glass-card text-slate-300 font-bold text-xs rounded-xl";
   });
   renderAttendanceRows();
 }
@@ -590,7 +596,7 @@ function copyAbsenceNotice() {
   let msg = `[CHỐT SỔ ĐIỂM DANH 10A12 - ${sessionText.toUpperCase()}]\n`;
   msg += `Ngày: ${dateVal} • Sĩ số: 45/45 (Hiện diện: ${45 - absentees.length} | Vắng/Trễ: ${absentees.length})\n\n`;
   absentees.forEach((s, idx) => {
-    msg += `${idx + 1}. ${s.hoTen} (${s.to}) - [${s.status}]${s.reason ? ': ' + s.reason : ''}\n`;
+    msg += `${idx + 1}. ${s.hoTen} (${s.to}) - [${s.status}]\n`;
   });
   msg += `\nLớp trưởng xác nhận: Tấn An.`;
   navigator.clipboard.writeText(msg).then(() => alert("Đã sao chép báo cáo điểm danh gửi Zalo!"));
@@ -615,7 +621,7 @@ async function loadFundData() {
       document.getElementById("currentBalance").innerText = fmt(sumJson.summary.balance);
 
       expenseTransactions = sumJson.transactions || [];
-      document.getElementById("sumExpenseCount").innerText = `${expenseTransactions.length} phiếu chi hợp lệ`;
+      document.getElementById("sumExpenseCount").innerText = `${expenseTransactions.length} phiếu chi`;
       renderExpenseHistory();
     }
 
@@ -642,15 +648,15 @@ function renderFundChecklist() {
   }
 
   container.innerHTML = filtered.map(st => `
-    <label class="flex items-center justify-between p-3 rounded-2xl glass-card cursor-pointer select-none transition ${st.paid ? 'border-emerald-400/50 bg-emerald-500/10' : ''}">
-      <div class="flex items-center gap-3">
+    <label class="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl glass-card cursor-pointer select-none transition ${st.paid ? 'border-emerald-400/50 bg-emerald-500/10' : ''}">
+      <div class="flex items-center gap-2.5">
         <input type="checkbox" ${st.paid ? 'checked' : ''} onchange="toggleFundLocal('${st.id}', this.checked)" class="w-4 h-4 text-emerald-500 rounded accent-emerald-500">
         <div>
           <p class="text-xs font-black text-white leading-tight">${st.hoTen}</p>
-          <span class="text-[10px] text-slate-400 font-mono">${st.id} • ${st.to}</span>
+          <span class="text-[9.5px] text-slate-400 font-mono">${st.id} • ${st.to}</span>
         </div>
       </div>
-      <span class="text-[10px] font-black px-2.5 py-0.5 rounded-full ${st.paid ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30' : 'text-rose-300 bg-rose-500/20 border border-rose-400/30'}">${st.paid ? 'Đã nộp' : 'Chưa nộp'}</span>
+      <span class="text-[9.5px] font-black px-2 py-0.5 rounded-full ${st.paid ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30' : 'text-rose-300 bg-rose-500/20 border border-rose-400/30'}">${st.paid ? 'Đã nộp' : 'Chưa nộp'}</span>
     </label>
   `).join('');
 }
@@ -670,8 +676,8 @@ function filterFundTeam(team) {
   ['ALL', 'Tổ 1', 'Tổ 2', 'Tổ 3', 'Tổ 4'].forEach(t => {
     const btn = document.getElementById(`fundTeam-${t}`);
     if (btn) btn.className = (t === team)
-      ? "px-2.5 py-1 bg-brand-600 text-white font-black text-[11px] rounded-lg shadow-sm"
-      : "px-2.5 py-1 glass-card text-slate-300 font-bold text-[11px] rounded-lg";
+      ? "px-2 py-0.5 bg-brand-600 text-white font-black text-[10.5px] rounded-lg"
+      : "px-2 py-0.5 glass-card text-slate-300 font-bold text-[10.5px] rounded-lg";
   });
   renderFundChecklist();
 }
@@ -700,13 +706,13 @@ function renderExpenseHistory() {
   if (!container) return;
 
   if (expenseTransactions.length === 0) {
-    container.innerHTML = `<p class="p-8 text-center text-slate-500 italic">Chưa có khoản chi nào được ghi nhận.</p>`;
+    container.innerHTML = `<p class="p-8 text-center text-slate-500 italic">Chưa có khoản chi nào.</p>`;
     return;
   }
 
   const fmt = n => new Intl.NumberFormat('vi-VN').format(n) + " đ";
   container.innerHTML = expenseTransactions.map(tx => `
-    <div class="p-3 glass-card rounded-2xl flex justify-between items-center transition">
+    <div class="p-2.5 glass-card rounded-2xl flex justify-between items-center transition">
       <div class="space-y-0.5">
         <div class="flex items-center gap-1.5">
           <span class="text-xs font-black text-white">${tx.note || tx.category}</span>
@@ -714,7 +720,7 @@ function renderExpenseHistory() {
         </div>
         <p class="text-[10px] text-slate-400 font-mono">${tx.time} • Bởi: ${tx.actor}</p>
       </div>
-      <span class="text-xs font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-xl">-${fmt(tx.amount)}</span>
+      <span class="text-xs font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-xl">-${fmt(tx.amount)}</span>
     </div>
   `).join('');
 }
@@ -840,8 +846,8 @@ function setScoringType(type) {
   select.innerHTML = "";
 
   if (type === 'PENALTY') {
-    document.getElementById("btnTabPenalty").className = "py-2.5 rounded-xl bg-rose-600 text-white shadow-md";
-    document.getElementById("btnTabBonus").className = "py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200";
+    document.getElementById("btnTabPenalty").className = "py-2 rounded-xl bg-rose-600 text-white shadow-md";
+    document.getElementById("btnTabBonus").className = "py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200";
 
     THI_DUA_RULES.PENALTY.forEach(item => {
       const opt = document.createElement("option");
@@ -852,8 +858,8 @@ function setScoringType(type) {
       select.appendChild(opt);
     });
   } else {
-    document.getElementById("btnTabBonus").className = "py-2.5 rounded-xl bg-emerald-600 text-white shadow-md";
-    document.getElementById("btnTabPenalty").className = "py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200";
+    document.getElementById("btnTabBonus").className = "py-2 rounded-xl bg-emerald-600 text-white shadow-md";
+    document.getElementById("btnTabPenalty").className = "py-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200";
 
     THI_DUA_RULES.BONUS.forEach(item => {
       const opt = document.createElement("option");
@@ -892,7 +898,7 @@ async function submitScoringEntry() {
 
   const btn = document.getElementById("btnSubmitScoring");
   btn.disabled = true;
-  btn.innerText = "Đang ghi nhận...";
+  btn.innerText = "Đang lưu...";
 
   try {
     const res = await callGasApiPost("submitDailyScore", {
@@ -915,7 +921,7 @@ async function submitScoringEntry() {
     alert("Lỗi kết nối máy chủ Google Sheets!");
   } finally {
     btn.disabled = false;
-    btn.innerText = "Xác Nhận Lưu Điểm";
+    btn.innerText = "Lưu Điểm";
   }
 }
 
@@ -955,13 +961,13 @@ function renderViolationTable() {
   }
   tbody.innerHTML = weeklyViolations.map(item => `
     <tr class="hover:bg-white/[0.04] transition">
-      <td class="py-3 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">${item.time}</td>
-      <td class="py-3 px-4 font-black text-white">${item.studentName}</td>
-      <td class="py-3 px-4"><span class="bg-sky-500/20 text-sky-300 border border-sky-400/30 px-2 py-0.5 rounded text-[10px] font-bold">${item.sender?.split('(')[1]?.replace(')', '') || 'Tổ'}</span></td>
-      <td class="py-3 px-4 text-slate-300">${item.criteria} ${item.note ? `<span class="text-slate-500 italic">(${item.note})</span>` : ''}</td>
-      <td class="py-3 px-4 text-center font-black text-rose-400 text-sm">${item.points}đ</td>
-      <td class="py-3 px-4 text-slate-400 text-[11px]">${item.sender}</td>
-      <td class="py-3 px-4 text-right">
+      <td class="py-2.5 px-3 sm:px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">${item.time}</td>
+      <td class="py-2.5 px-3 sm:px-4 font-black text-white">${item.studentName}</td>
+      <td class="py-2.5 px-3 sm:px-4"><span class="bg-sky-500/20 text-sky-300 border border-sky-400/30 px-1.5 py-0.2 rounded text-[10px] font-bold">${item.sender?.split('(')[1]?.replace(')', '') || 'Tổ'}</span></td>
+      <td class="py-2.5 px-3 sm:px-4 text-slate-300">${item.criteria} ${item.note ? `<span class="text-slate-500 italic">(${item.note})</span>` : ''}</td>
+      <td class="py-2.5 px-3 sm:px-4 text-center font-black text-rose-400 text-sm">${item.points}đ</td>
+      <td class="py-2.5 px-3 sm:px-4 text-slate-400 text-[11px]">${item.sender}</td>
+      <td class="py-2.5 px-3 sm:px-4 text-right">
         <button onclick="revokeScorePrompt('${item.time}', '${item.studentId}', ${item.points})" class="text-sky-400 hover:text-sky-300 font-bold text-[11px] hover:underline">Hoàn điểm</button>
       </td>
     </tr>
@@ -1069,31 +1075,31 @@ function renderPunishmentScheduleUI() {
 
   tbody.innerHTML = autoScheduleResults.map(shift => {
     const l1Names = shift.level1.map(s => `
-      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[11px] font-bold">
-        <i class="fa-solid fa-user text-[9px]"></i> ${s.studentName} (-${s.totalPenalty}đ)
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[10.5px] font-bold">
+        ${s.studentName} (-${s.totalPenalty}đ)
       </span>
     `).join(' ') || `<span class="text-slate-500 italic text-[11px]">Không có</span>`;
 
     const l2Names = shift.level2.map(s => `
-      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-400/30 text-[11px] font-black">
-        <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> ${s.studentName} (-${s.totalPenalty}đ)
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-400/30 text-[10.5px] font-black">
+        ${s.studentName} (-${s.totalPenalty}đ)
       </span>
     `).join(' ') || `<span class="text-slate-500 italic text-[11px]">Không có</span>`;
 
     return `
       <tr class="hover:bg-white/[0.04] transition">
-        <td class="py-3 px-4 font-black text-white whitespace-nowrap">
+        <td class="py-2.5 px-3 sm:px-4 font-black text-white whitespace-nowrap">
           ${shift.dayName}
-          <span class="block text-[10px] text-slate-400 font-mono font-normal">${shift.time}</span>
+          <span class="block text-[9.5px] text-slate-400 font-mono font-normal">${shift.time}</span>
         </td>
-        <td class="py-3 px-4">
+        <td class="py-2.5 px-3 sm:px-4">
           <span class="text-xs font-bold text-sky-300 bg-sky-500/10 border border-sky-400/25 px-2 py-0.5 rounded-lg">
             ${shift.mainTeam}
           </span>
         </td>
-        <td class="py-3 px-4 leading-relaxed">${l1Names}</td>
-        <td class="py-3 px-4 leading-relaxed">${l2Names}</td>
-        <td class="py-3 px-4 text-slate-400 text-[11px] font-medium">${shift.inspector}</td>
+        <td class="py-2.5 px-3 sm:px-4 leading-relaxed">${l1Names}</td>
+        <td class="py-2.5 px-3 sm:px-4 leading-relaxed">${l2Names}</td>
+        <td class="py-2.5 px-3 sm:px-4 text-slate-400 text-[11px] font-medium">${shift.inspector}</td>
       </tr>
     `;
   }).join('');
@@ -1131,7 +1137,7 @@ function copyPunishmentNotice() {
   });
 }
 
-// ==================== TỰ ĐỘNG HÓA BIÊN BẢN SINH HOẠT LỚP ====================
+// ==================== BIÊN BẢN SINH HOẠT LỚP ====================
 let currentMeetingData = {
   week: 1,
   teamScores: { "Tổ 1": 100, "Tổ 2": 100, "Tổ 3": 100, "Tổ 4": 100 }
@@ -1179,12 +1185,12 @@ function openWeeklyMeetingModal() {
     const rankLabel = idx === 0 ? "Hạng 1 (Xuất sắc)" : (idx === 1 ? "Hạng 2 (Tốt)" : (idx === 2 ? "Hạng 3 (Khá)" : "Hạng 4 (Cần cố gắng)"));
     return `
       <tr class="${idx === 0 ? 'bg-amber-50/60 font-bold' : ''}">
-        <td class="border border-slate-300 p-2 text-center font-black">${tName}</td>
-        <td class="border border-slate-300 p-2">${item.leader}</td>
-        <td class="border border-slate-300 p-2 text-center text-emerald-700 font-bold">+${item.bonus}đ</td>
-        <td class="border border-slate-300 p-2 text-center text-rose-700 font-bold">-${item.penalty}đ</td>
-        <td class="border border-slate-300 p-2 text-center font-black text-indigo-900">${item.score}đ</td>
-        <td class="border border-slate-300 p-2 text-center font-bold">${rankLabel}</td>
+        <td class="border border-slate-300 p-1.5 text-center font-black">${tName}</td>
+        <td class="border border-slate-300 p-1.5">${item.leader}</td>
+        <td class="border border-slate-300 p-1.5 text-center text-emerald-700 font-bold">+${item.bonus}đ</td>
+        <td class="border border-slate-300 p-1.5 text-center text-rose-700 font-bold">-${item.penalty}đ</td>
+        <td class="border border-slate-300 p-1.5 text-center font-black text-indigo-900">${item.score}đ</td>
+        <td class="border border-slate-300 p-1.5 text-center font-bold">${rankLabel}</td>
       </tr>
     `;
   }).join('');
@@ -1198,10 +1204,10 @@ function openWeeklyMeetingModal() {
       const l2 = s.level2.map(st => `${st.studentName} (-${st.totalPenalty}đ)`).join(', ');
       if (!l1 && !l2) return '';
       return `
-        <div class="text-[11.5px] border-b border-slate-200 pb-1">
-          • <b>${s.dayName} (${s.time}):</b> Trực nhật chính: ${s.mainTeam}. 
-          ${l1 ? `<span class="text-amber-800">Trực nhật hỗ trợ (Mức 1): ${l1}.</span> ` : ''}
-          ${l2 ? `<span class="text-rose-800 font-bold">Quét dọn & đổ rác (Mức 2): ${l2}.</span> ` : ''}
+        <div class="text-[11px] border-b border-slate-200 pb-1">
+          • <b>${s.dayName} (${s.time}):</b> Trực chính: ${s.mainTeam}. 
+          ${l1 ? `<span class="text-amber-800">Trực hỗ trợ (Mức 1): ${l1}.</span> ` : ''}
+          ${l2 ? `<span class="text-rose-800 font-bold">Quét rác (Mức 2): ${l2}.</span> ` : ''}
           <i>(Kiểm tra: ${s.inspector})</i>
         </div>
       `;
@@ -1300,33 +1306,33 @@ function renderStudentsGrid(list) {
     const scoreColor = score >= 90 ? 'text-emerald-300 border-emerald-400/40 bg-emerald-500/10' : (score >= 75 ? 'text-amber-300 border-amber-400/40 bg-amber-500/10' : 'text-rose-300 border-rose-400/40 bg-rose-500/10');
 
     return `
-      <div class="glass-card rounded-2xl p-4 space-y-3.5 cursor-pointer" onclick="openScoringModalForStudent('${st.id}', '${st.hoTen}', '${st.to}')">
-        <div class="flex justify-between items-start gap-3">
-          <div class="flex items-center gap-3">
-            <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-brand-600 to-sky-500 text-white font-black flex items-center justify-center text-base shadow-glow-indigo shrink-0">
+      <div class="glass-card rounded-2xl p-3.5 space-y-3 cursor-pointer" onclick="openScoringModalForStudent('${st.id}', '${st.hoTen}', '${st.to}')">
+        <div class="flex justify-between items-start gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-600 to-sky-500 text-white font-black flex items-center justify-center text-sm shadow-glow-indigo shrink-0">
               ${initial}
             </div>
             <div>
-              <h4 class="font-black text-sm text-white tracking-tight">${st.hoTen}</h4>
-              <p class="text-[10px] text-slate-400 font-mono mt-0.5">
+              <h4 class="font-black text-xs sm:text-sm text-white tracking-tight">${st.hoTen}</h4>
+              <p class="text-[9.5px] text-slate-400 font-mono mt-0.5">
                 ${st.id} • ${st.to} ${st.chucVu ? '• <span class="text-sky-300 font-bold">' + st.chucVu + '</span>' : ''}
               </p>
             </div>
           </div>
-          <span class="text-[11px] font-black px-2 py-1 rounded-xl border ${scoreColor}">${score}đ</span>
+          <span class="text-[10.5px] font-black px-2 py-0.5 rounded-xl border ${scoreColor}">${score}đ</span>
         </div>
 
         <div class="pt-2 border-t border-white/5 text-[11px] text-slate-300 space-y-1">
-          <p class="text-slate-400 truncate text-[10.5px]">
+          <p class="text-slate-400 truncate text-[10px]">
             <i class="fa-solid fa-house-chimney text-slate-500 mr-1.5"></i>${st.diaChi || 'Tây Sơn, Gia Lai'}
           </p>
-          <div class="flex justify-between items-center pt-1 text-[11px]">
-            <span class="truncate max-w-[170px] text-slate-300">Ba: <b>${st.hoTenBa || '(Chưa có)'}</b></span>
+          <div class="flex justify-between items-center pt-0.5 text-[10.5px]">
+            <span class="truncate max-w-[150px] text-slate-300">Ba: <b>${st.hoTenBa || '(Chưa có)'}</b></span>
             ${st.sdtBa ? `
-              <a href="tel:${st.sdtBa}" onclick="event.stopPropagation()" class="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30 font-bold transition flex items-center gap-1">
-                <i class="fa-solid fa-phone text-[9px]"></i> Gọi Ba
+              <a href="tel:${st.sdtBa}" onclick="event.stopPropagation()" class="px-2 py-0.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30 font-bold transition flex items-center gap-1">
+                <i class="fa-solid fa-phone text-[8.5px]"></i> Gọi Ba
               </a>
-            ` : '<span class="text-slate-500 italic text-[10px]">Chưa có SĐT</span>'}
+            ` : '<span class="text-slate-500 italic text-[9.5px]">Chưa có SĐT</span>'}
           </div>
         </div>
       </div>
@@ -1353,39 +1359,34 @@ async function loadAllAppData() {
       loadFundData(),
       loadStudentsFull()
     ]);
-    document.getElementById("statusDot").className = "w-2 h-2 rounded-full bg-emerald-400 shadow-glow-emerald";
-    document.getElementById("statusText").innerText = "Trực tuyến";
+    const dot = document.getElementById("statusDot");
+    if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400 shadow-glow-emerald";
   } catch (e) {
-    document.getElementById("statusDot").className = "w-2 h-2 rounded-full bg-rose-500";
-    document.getElementById("statusText").innerText = "Lỗi kết nối";
+    const dot = document.getElementById("statusDot");
+    if (dot) dot.className = "w-2 h-2 rounded-full bg-rose-500";
   }
 }
 
-// ==================== ĐIỀU HƯỚNG TABS ĐỒNG BỘ DESKTOP & MOBILE ====================
+// ==================== ĐIỀU HƯỚNG TABS DESKTOP & MOBILE ====================
 function switchTab(tabId) {
-  // Ẩn tất cả các nội dung tab
   document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
   const targetContent = document.getElementById(tabId);
   if (targetContent) targetContent.classList.remove("hidden");
 
-  // 1. Cập nhật Sidebar trên Máy tính
-  const desktopTabs = ['overview', 'seating', 'attendance', 'fund', 'students'];
-  desktopTabs.forEach(t => {
+  // 1. Sidebar máy tính
+  ['overview', 'seating', 'attendance', 'fund', 'students'].forEach(t => {
     const btn = document.getElementById(`sidebar-tab-${t}`);
     if (btn) {
-      if (`tab-${t}` === tabId) {
-        btn.className = "w-full px-3.5 py-3 rounded-2xl bg-brand-600 text-white font-black text-xs flex items-center gap-3 transition shadow-glow-indigo text-left";
-      } else {
-        btn.className = "w-full px-3.5 py-3 rounded-2xl text-slate-300 hover:bg-white/5 font-bold text-xs flex items-center gap-3 transition text-left";
-      }
+      btn.className = (`tab-${t}` === tabId)
+        ? "w-full px-3.5 py-3 rounded-2xl bg-brand-600 text-white font-black text-xs flex items-center gap-3 transition shadow-glow-indigo text-left"
+        : "w-full px-3.5 py-3 rounded-2xl text-slate-300 hover:bg-white/5 font-bold text-xs flex items-center gap-3 transition text-left";
     }
   });
 
-  // 2. Cập nhật Bottom Bar trên Điện thoại
-  desktopTabs.forEach(t => {
+  // 2. Bottom nav điện thoại
+  ['overview', 'seating', 'attendance', 'fund', 'students'].forEach(t => {
     const mBtn = document.getElementById(`mobile-tab-${t}`);
     if (mBtn) {
-      const icon = mBtn.querySelector('i');
       const text = mBtn.querySelector('span');
       if (`tab-${t}` === tabId) {
         mBtn.className = "flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-sky-400 transition";
@@ -1397,51 +1398,15 @@ function switchTab(tabId) {
     }
   });
 
-  // Nạp dữ liệu đặc thù theo từng tab
   if (tabId === 'tab-seating') renderSeatingChart();
   if (tabId === 'tab-attendance') loadAttendanceList();
   if (tabId === 'tab-fund') loadFundData();
   if (tabId === 'tab-students') loadStudentsFull();
 
-  // Tự động cuộn mượt lên đầu trang khi chuyển tab trên điện thoại
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-// ==================== TỰ ĐỘNG CẬP NHẬT PWA & SERVICE WORKER NGẦM ====================
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').then(reg => {
-      // Kiểm tra khi có bản cập nhật mới trên máy chủ GitHub Pages
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // Hiển thị thông báo yêu cầu cập nhật nhẹ nhàng
-              const isUpdateAccepted = confirm("✨ Sổ tay 10A12 đã có phiên bản cập nhật mới (Logo/Tính năng mới). Bấm OK để cập nhật ngay!");
-              if (isUpdateAccepted) {
-                // Kích hoạt worker mới và tải lại trang ngay lập tức
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
-                window.location.reload();
-              }
-            }
-          });
-        }
-      });
-    }).catch(err => {
-      console.warn("Service Worker đăng ký không thành công:", err);
-    });
-  });
 
-  // Đảm bảo reload ngay khi service worker mới chiếm quyền điều khiển
-  let refreshing = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!refreshing) {
-      refreshing = true;
-      window.location.reload();
-    }
-  });
-}
-// Khởi chạy tự động ngay khi mở trang
+// TỰ ĐỘNG KHỞI TẠO VÀ LẮNG NGHE CẬP NHẬT
 window.addEventListener("DOMContentLoaded", () => {
   const today = new Date();
   document.getElementById("attendDateInput").value = today.toISOString().slice(0, 10);
