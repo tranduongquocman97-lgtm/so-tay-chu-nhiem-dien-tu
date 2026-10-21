@@ -6,6 +6,10 @@
   <title>Cổng Tra Cứu Toàn Diện Học Sinh 10A12 - K58-QT</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- PWA MANIFEST DÀNH CHO PHỤ HUYNH & HỌC SINH -->
+  <link rel="manifest" href="manifest-hs.json">
+  <meta name="theme-color" content="#070B19">
+  <link rel="apple-touch-icon" href="app_icon_10a12.png">
   <style>
     body { background-color: #0b1120; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     .glass-card { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.08); }
@@ -95,16 +99,16 @@
         <div class="flex items-start justify-between gap-3">
           <div class="space-y-1">
             <div class="flex items-center gap-2 flex-wrap">
-              <h2 class="text-lg sm:text-xl font-black text-white" id="resHoTen">Nguyễn Tấn An</h2>
+              <h2 class="text-lg sm:text-xl font-black text-white" id="resHoTen">Họ và Tên</h2>
               <span id="resBadgeDoan" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
                 Đoàn viên
               </span>
               <span id="resBadgeChucVu" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">
-                Lớp trưởng
+                Thành viên
               </span>
             </div>
             <p class="text-xs text-slate-300">
-              Mã HS: <b id="resId" class="text-white font-mono">HS01</b> • <span id="resTo">Tổ 1</span> • Ngày sinh: <span id="resNgaySinh">12/04/2011</span>
+              Mã HS: <b id="resId" class="text-white font-mono">--</b> • <span id="resTo">Tổ 1</span> • Ngày sinh: <span id="resNgaySinh">--/--/----</span>
             </p>
           </div>
           <div class="text-right flex-shrink-0">
@@ -153,7 +157,7 @@
         </button>
       </div>
 
-      <!-- TAB 1: CÁC ĐỢT THU QUỸ CỦA LỚP -->
+      <!-- TAB 1: CÁC ĐỢT THU QUỸ CỦA LỚP (ĐÃ BỎ TÊN RIÊNG) -->
       <section id="ltab-quy" class="ltab-pane space-y-3">
         <div class="glass-card p-4 rounded-2xl">
           <div class="flex items-center justify-between mb-3">
@@ -161,15 +165,13 @@
               <i class="fa-solid fa-money-bill-wave text-emerald-400"></i>
               Chi Tiết Tình Trạng Đóng Quỹ Các Kỳ
             </h3>
-            <span class="text-[11px] text-slate-400">Thủ quỹ: Nguyễn My Su (10A12)</span>
+            <span class="text-[11px] text-slate-400">Thủ quỹ lớp 10A12</span>
           </div>
-          <div id="fundList" class="space-y-2.5">
-            <!-- Render danh sách quỹ -->
-          </div>
+          <div id="fundList" class="space-y-2.5"></div>
         </div>
       </section>
 
-      <!-- TAB 2: NHẬT KÝ NỀ NẾP & CHUYÊN CẦN CHI TIẾT -->
+      <!-- TAB 2: NHẬT KÝ NỀ NẾP & CHUYÊN CẦN -->
       <section id="ltab-nen-nep" class="ltab-pane hidden space-y-3">
         <div class="glass-card p-4 rounded-2xl">
           <div class="flex items-center justify-between mb-3">
@@ -179,13 +181,11 @@
             </h3>
             <span class="text-[11px] text-slate-400">Xuất phát: 100đ/tuần</span>
           </div>
-          <div id="violationList" class="space-y-2 text-xs">
-            <!-- Render các lượt vi phạm, tuyên dương -->
-          </div>
+          <div id="violationList" class="space-y-2 text-xs"></div>
         </div>
       </section>
 
-      <!-- TAB 3: TRỰC NHẬT & LAO ĐỘNG PHẠT (THÁI HOÀNG) -->
+      <!-- TAB 3: TRỰC NHẬT & LAO ĐỘNG PHẠT (ĐÃ BỎ TÊN RIÊNG) -->
       <section id="ltab-lao-dong" class="ltab-pane hidden space-y-3">
         <div class="glass-card p-4 rounded-2xl">
           <div class="flex items-center justify-between mb-3">
@@ -193,11 +193,9 @@
               <i class="fa-solid fa-broom text-amber-400"></i>
               Lịch Trực Nhật Tổ & Chấp Hành Phạt Lao Động
             </h3>
-            <span class="text-[11px] text-slate-400">Phụ trách: Thái Hoàng (Phó LĐ)</span>
+            <span class="text-[11px] text-slate-400">Ban Cán sự Lao động</span>
           </div>
-          <div id="laborInfoCard" class="space-y-3 text-xs">
-            <!-- Render lịch trực và tình trạng phạt -->
-          </div>
+          <div id="laborInfoCard" class="space-y-3 text-xs"></div>
         </div>
       </section>
 
@@ -211,13 +209,11 @@
             </h3>
             <span class="text-[11px] text-slate-400">Sổ đầu bài số hóa</span>
           </div>
-          <div id="academicLogList" class="space-y-2 text-xs">
-            <!-- Render ghi nhận học tập -->
-          </div>
+          <div id="academicLogList" class="space-y-2 text-xs"></div>
         </div>
       </section>
 
-      <!-- TAB 5: LÝ LỊCH GIA ĐÌNH & VỊ TRÍ CHỖ NGỒI TRÊN LỚP -->
+      <!-- TAB 5: LÝ LỊCH GIA ĐÌNH & VỊ TRÍ CHỖ NGỒI -->
       <section id="ltab-ly-lich" class="ltab-pane hidden space-y-3">
         <div class="glass-card p-4 rounded-2xl space-y-3 text-xs">
           <h3 class="text-xs font-bold text-slate-200 uppercase flex items-center gap-2 border-b border-white/10 pb-2">
@@ -228,9 +224,9 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1.5">
               <span class="text-[10px] text-slate-400 uppercase font-bold block">Thông tin định danh</span>
-              <p class="text-slate-200">Số thẻ CCCD: <b id="resCCCD" class="font-mono text-white">052206xxxxxx</b></p>
+              <p class="text-slate-200">Số thẻ CCCD: <b id="resCCCD" class="font-mono text-white">Chưa cập nhật</b></p>
               <p class="text-slate-200">Đoàn thể: <span id="resDoanDetail">Đoàn viên TNCS Hồ Chí Minh</span></p>
-              <p class="text-slate-200">Ngày kết nạp Đoàn: <span id="resNgayDoan">15/03/2026</span></p>
+              <p class="text-slate-200">Ngày kết nạp Đoàn: <span id="resNgayDoan">--</span></p>
               <p class="text-slate-200">Thường trú: <span id="resDiaChi">Tây Sơn, Gia Lai</span></p>
             </div>
 
@@ -243,16 +239,15 @@
             </div>
           </div>
 
-          <!-- Vị trí chỗ ngồi trên lớp 4 dãy -->
           <div class="p-3 rounded-xl bg-sky-500/10 border border-sky-400/20 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <i class="fa-solid fa-chair text-sky-400 text-lg"></i>
               <div>
                 <span class="text-[10px] text-slate-400 uppercase font-bold block">Vị trí chỗ ngồi (Sơ đồ 4 dãy)</span>
-                <p class="text-xs font-black text-white" id="resSeatPosition">Dãy 1 • Bàn 2 (Bên trái)</p>
+                <p class="text-xs font-black text-white" id="resSeatPosition">Dãy 1 • Bàn 1</p>
               </div>
             </div>
-            <span class="text-[10px] text-sky-300 font-semibold bg-sky-500/20 px-2 py-0.5 rounded-full">Tự động xoay tua</span>
+            <span class="text-[10px] text-sky-300 font-semibold bg-sky-500/20 px-2 py-0.5 rounded-full">Theo sơ đồ lớp</span>
           </div>
 
           <p class="text-[11px] text-slate-400 italic">
@@ -263,7 +258,7 @@
 
     </div>
 
-    <!-- MODAL SAO KÊ QUỸ LỚP CÔNG KHAI (PUBLIC STATEMENT) -->
+    <!-- MODAL SAO KÊ QUỸ LỚP CÔNG KHAI -->
     <div id="statementModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-3 sm:p-4">
       <div class="glass-card max-w-lg w-full p-4 sm:p-5 rounded-2xl border border-white/20 max-h-[90vh] flex flex-col">
         <div class="flex items-center justify-between pb-3 border-b border-white/10">
@@ -315,9 +310,9 @@
 
   <script>
     // URL WEB APP APPS SCRIPT ĐỒNG BỘ
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzxxxxxx/exec";
+    const GAS_API_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1ITYoi_wldFpc/exec";
 
-    // Khởi động khi tải trang: tự động điền lại mã học sinh đã tra cứu trước đó
+    // Khởi động khi tải trang
     document.addEventListener("DOMContentLoaded", () => {
       const savedCode = localStorage.getItem("savedLookupCode_10A12");
       if (savedCode) {
@@ -373,7 +368,6 @@
           throw new Error(res.message || "Không tìm thấy hồ sơ học sinh tương ứng trong hệ thống!");
         }
 
-        // Lưu phiên tra cứu thành công
         localStorage.setItem("savedLookupCode_10A12", input);
         document.getElementById("savedIndicator").classList.remove("hidden");
 
@@ -540,7 +534,7 @@
       document.getElementById("resSdtMe").innerText = st.sdtMe || "Chưa có SĐT";
 
       // Vị trí chỗ ngồi
-      document.getElementById("resSeatPosition").innerText = `${st.to} • Vị trí Bàn ${Math.min(parseInt(st.id.replace('HS','')) % 5 + 1, 5)}`;
+      document.getElementById("resSeatPosition").innerText = `${st.to} • Bàn ${Math.min(parseInt(st.id.replace('HS','')) % 5 + 1, 5)}`;
     }
 
     // XEM SAO KÊ QUỸ LỚP CÔNG KHAI
@@ -588,6 +582,17 @@
 
     function showHelpModal() {
       alert("HƯỚNG DẪN TRA CỨU:\\n1. Nhập Mã học sinh (ví dụ: HS01 đến HS45).\\n2. Hoặc nhập dãy 12 số Căn cước công dân của học sinh.\\n3. Hệ thống sẽ tự động ghi nhớ mã tra cứu cho các lần truy cập tiếp theo của Quý Phụ huynh.");
+    }
+  </script>
+
+  <!-- ĐĂNG KÝ SERVICE WORKER PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('PWA ServiceWorker đã đăng ký:', reg.scope))
+          .catch(err => console.warn('Lỗi đăng ký ServiceWorker:', err));
+      });
     }
   </script>
 </body>

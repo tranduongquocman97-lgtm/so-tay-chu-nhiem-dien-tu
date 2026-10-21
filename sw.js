@@ -1,9 +1,13 @@
 /**
- * SERVICE WORKER ĐIỀU HÀNH PWA 10A12 (K58-QT)
- * Phiên bản: 10a12-pwa-v10
+ * ============================================================================
+ * SERVICE WORKER ĐIỀU HÀNH PWA SỔ TAY CHỦ NHIỆM 10A12 (K58-QT)
+ * Phiên bản: 10a12-pwa-v11 (Bổ sung Cache Busting, CDN Cache & Bypass POST)
+ * ============================================================================
  */
 
-const CACHE_NAME = "10a12-pwa-v10";
+const CACHE_NAME = "10a12-pwa-v11";
+
+// Danh mục tài nguyên tĩnh cốt lõi cần nạp sẵn khi cài đặt
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -12,10 +16,12 @@ const STATIC_ASSETS = [
   "./manifest.json",
   "./manifest-hs.json",
   "./app_icon_gvcn.png",
-  "./app_icon_10a12.png"
+  "./app_icon_10a12.png",
+  "https://cdn.tailwindcss.com",
+  "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
 ];
 
-// Cài đặt và nạp cache an toàn từng file (Không bị sập nếu thiếu 1 ảnh)
+// 1. Cài đặt và nạp cache an toàn (Không gián đoạn nếu thiếu 1 ảnh)
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -29,13 +35,14 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Kích hoạt và dọn dẹp toàn bộ cache cũ
+// 2. Kích hoạt và dọn dẹp sạch sẽ các phiên bản cache cũ
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log("[PWA ServiceWorker] Dọn dẹp cache cũ:", key);
             return caches.delete(key);
           }
         })
@@ -44,31 +51,50 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// 3. Lắng nghe thông điệp cập nhật tức thì
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
 });
 
-// Chiến lược Network-First: Ưu tiên tải file mới nhất từ mạng
+// 4. Chiến lược điều hướng: Network-First có kiểm soát lỗi
 self.addEventListener("fetch", (event) => {
-  const requestUrl = event.request.url;
+  const request = event.request;
+  const requestUrl = request.url;
 
-  // Bỏ qua hoàn toàn các lệnh gọi Google Apps Script API
-  if (requestUrl.includes("script.google.com")) {
+  // BỎ QUA HOÀN TOÀN:
+  // - Các phương thức không phải GET (POST, PUT, DELETE không được phép lưu vào CacheStorage)
+  // - Lệnh gọi API trực tiếp tới Google Apps Script
+  if (request.method !== "GET" || requestUrl.includes("script.google.com")) {
     return;
   }
 
-  // Network-First cho HTML và JS
   event.respondWith(
-    fetch(event.request)
+    fetch(request)
       .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
+        // Lưu bản sao vào cache nếu phản hồi hợp lệ (kể cả phản hồi opaque từ CDN)
+        if (networkResponse && (networkResponse.status === 200 || networkResponse.type === "opaque")) {
           const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
+          });
         }
         return networkResponse;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => {
+        // Khi mất kết nối mạng, tự động trả về tài nguyên từ bộ nhớ Cache
+        return caches.match(request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+
+          // Điều hướng trang mặc định nếu truy cập trang con khi offline
+          if (request.mode === "navigate") {
+            if (requestUrl.includes("tracuu.html")) {
+              return caches.match("./tracuu.html");
+            }
+            return caches.match("./index.html");
+          }
+        });
+      })
   );
 });

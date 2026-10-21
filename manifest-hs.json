@@ -1,14 +1,15 @@
 {
-  "id": "./tracuu.html",
+  "id": "tra-cuu-hoc-sinh-10a12",
   "start_url": "./tracuu.html",
   "scope": "./",
-  "name": "Tra Cứu Học Sinh 10A12",
+  "name": "Tra Cứu Học Sinh 10A12 - K58-QT",
   "short_name": "10A12 Tra Cứu",
-  "description": "Cổng tra cứu nề nếp, chuyên cần và quỹ lớp 10A12",
+  "description": "Cổng tra cứu nề nếp, chuyên cần, xếp loại rèn luyện và quỹ lớp 10A12",
   "display": "standalone",
-  "background_color": "#070B19",
-  "theme_color": "#070B19",
+  "background_color": "#0b1120",
+  "theme_color": "#0b1120",
   "orientation": "portrait",
+  "categories": ["education"],
   "icons": [
     {
       "src": "app_icon_10a12.png",
