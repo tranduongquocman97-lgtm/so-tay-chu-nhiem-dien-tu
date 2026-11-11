@@ -12,13 +12,13 @@
   "categories": ["education"],
   "icons": [
     {
-      "src": "app_icon_10a12.png",
+      "src": "app_icon_10a12_192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "app_icon_10a12.png",
+      "src": "app_icon_10a12_512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

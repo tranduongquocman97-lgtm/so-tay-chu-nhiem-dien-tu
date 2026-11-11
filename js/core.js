@@ -8,9 +8,13 @@
 
 const GAS_API_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1lTYoi_wIdFpd_jneRKW8TtzUDyrtKGdkfk6K0OGErPfyKsjlB9hfQ/exec";
 
-// ==================== 1. CHUẨN HÓA TIẾNG VIỆT ĐĂNG NHẬP ====================
+// ==================== 1. CHUẨN HÓA TIẾNG VIỆT & TIỆN ÍCH AN TOÀN ====================
 function removeVietnameseTones(str) {
   if (!str) return "";
+  str = String(str);
+  if (typeof str.normalize === "function") {
+    str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
   str = str.toLowerCase();
   str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
   str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
@@ -21,6 +25,106 @@ function removeVietnameseTones(str) {
   str = str.replace(/đ/g, "d");
   str = str.replace(/[^a-z0-9]/g, "");
   return str.trim();
+}
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str);
+}
+
+function safeMediaSrc(src) {
+  const s = String(src || "").trim();
+  if (!s) return "";
+  if (/^(data:(image|video)\/[a-z0-9.+-]+;base64,|https?:\/\/|tkb_10a12\.png|\.?\/)/i.test(s)) return s;
+  return "";
+}
+
+function parseScore(val, fallback = 100) {
+  if (val === null || val === undefined || val === "") return fallback;
+  const num = Number(val);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function safeJsonParse(raw, fallback) {
+  try {
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function getLocalDateKey(dateObj = new Date()) {
+  const d = (dateObj instanceof Date) ? dateObj : new Date(dateObj);
+  if (isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatDateVN(dateObj = new Date()) {
+  const d = (dateObj instanceof Date) ? dateObj : new Date(dateObj);
+  if (isNaN(d.getTime())) return "";
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+function getWeekNumberFromDate(dateObj = new Date()) {
+  const d = (dateObj instanceof Date) ? dateObj : new Date(dateObj);
+  if (isNaN(d.getTime())) return getAutoSchoolWeek();
+  const localMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffTime = localMidnight.getTime() - SCHOOL_YEAR_START_MONDAY.getTime();
+  const diffWeeks = Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return Math.min(35, Math.max(1, diffWeeks));
+}
+
+function compressImageDataUrl(file, maxWidth = 1280, quality = 0.78) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Không đọc được tệp ảnh."));
+    reader.onload = (ev) => {
+      const rawDataUrl = ev.target.result;
+      if (typeof document === "undefined" || !String(rawDataUrl).startsWith("data:image/")) {
+        resolve(rawDataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onerror = () => resolve(rawDataUrl);
+      img.onload = () => {
+        let targetW = img.width || maxWidth;
+        let targetH = img.height || maxWidth;
+        if (targetW > maxWidth) {
+          targetH = Math.round((targetH * maxWidth) / targetW);
+          targetW = maxWidth;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(rawDataUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        try {
+          const compressed = canvas.toDataURL("image/jpeg", quality);
+          resolve(compressed.length < rawDataUrl.length ? compressed : rawDataUrl);
+        } catch (err) {
+          resolve(rawDataUrl);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // ==================== 2. DANH SÁCH 45 HỌC SINH MẪU ====================
@@ -143,6 +247,53 @@ const TKB_CONFIG_SO3 = {
   ]
 };
 
+function getDefaultTkbConfig() {
+  return {
+    versionLabel: "Số 3",
+    effectiveDate: "02/11/2026",
+    morning: TKB_CONFIG_SO3.morning.map(r => ({ ...r })),
+    afternoon: TKB_CONFIG_SO3.afternoon.map(r => ({ ...r }))
+  };
+}
+
+function normalizeTkbConfig(raw) {
+  const fb = getDefaultTkbConfig();
+  if (!raw || typeof raw !== "object") return fb;
+  const normList = (srcList, fbList) => fbList.map((fbRow, idx) => {
+    const row = (Array.isArray(srcList) && srcList[idx] && typeof srcList[idx] === "object") ? srcList[idx] : fbRow;
+    const cell = (k) => {
+      const v = String(row[k] !== undefined && row[k] !== null ? row[k] : (fbRow[k] || "-")).trim();
+      return v || "-";
+    };
+    return {
+      period: Number(row.period) || fbRow.period,
+      time: String(row.time || fbRow.time),
+      t2: cell("t2"),
+      t3: cell("t3"),
+      t4: cell("t4"),
+      t5: cell("t5"),
+      t6: cell("t6"),
+      t7: cell("t7")
+    };
+  });
+  let vLabel = String(raw.versionLabel || raw.version || fb.versionLabel).trim() || fb.versionLabel;
+  if (/^\d+$/.test(vLabel)) vLabel = `Số ${vLabel}`;
+  const eDate = String(raw.effectiveDate || fb.effectiveDate).trim() || fb.effectiveDate;
+  return {
+    versionLabel: vLabel,
+    effectiveDate: eDate,
+    morning: normList(raw.morning, fb.morning),
+    afternoon: normList(raw.afternoon, fb.afternoon)
+  };
+}
+
+function getActiveTkbConfig() {
+  if (!appState.tkbConfig || typeof appState.tkbConfig !== "object") {
+    appState.tkbConfig = getDefaultTkbConfig();
+  }
+  return appState.tkbConfig;
+}
+
 // ==================== 5. QUY CHẾ 01 CHUẨN ====================
 const DEFAULT_CRITERIA_LIST = [
   { code: "C01", name: "Đạt điểm 9, 10 kiểm tra miệng / 15p", points: 10, type: "CONG" },
@@ -177,7 +328,7 @@ function buildAutoWeekDropdown() {
   if (!selectEl) return;
 
   const currentRealWeek = getAutoSchoolWeek();
-  appState.selectedWeek = currentRealWeek;
+  if (!appState.selectedWeek) appState.selectedWeek = currentRealWeek;
 
   let optionsHtml = "";
   for (let w = 1; w <= 35; w++) {
@@ -188,15 +339,173 @@ function buildAutoWeekDropdown() {
     const sunStr = `${String(sun.getDate()).padStart(2, '0')}/${String(sun.getMonth() + 1).padStart(2, '0')}/${sun.getFullYear()}`;
 
     const isCurrent = (w === currentRealWeek);
-    const label = `Tuần ${w} (${monStr} - ${sunStr})${isCurrent ? " • Hiện tại" : ""}`;
+    const isArchived = Boolean(appState.weeklyArchives && (appState.weeklyArchives[`TUAN_${w}`] || appState.weeklyArchives[`Tuan_${w}`]));
+    const suffix = isCurrent ? " • Hiện tại" : (isArchived ? " • Đã chốt" : "");
+    const label = `Tuần ${w} (${monStr} - ${sunStr})${suffix}`;
 
-    optionsHtml += `<option value="${w}" ${isCurrent ? "selected" : ""}>${label}</option>`;
+    optionsHtml += `<option value="${w}" ${w === Number(appState.selectedWeek) ? "selected" : ""}>${label}</option>`;
   }
 
   selectEl.innerHTML = optionsHtml;
 
   if (typeof switchWeekScope === "function") {
-    switchWeekScope(currentRealWeek);
+    switchWeekScope(appState.selectedWeek);
+  }
+}
+
+function getScopedWeekData() {
+  const selectedWeek = Number(appState.selectedWeek) || getAutoSchoolWeek();
+  const realWeek = getAutoSchoolWeek();
+  const archive = appState.weeklyArchives ? (appState.weeklyArchives[`TUAN_${selectedWeek}`] || appState.weeklyArchives[`Tuan_${selectedWeek}`]) : null;
+  if (archive && Array.isArray(archive.students)) {
+    return {
+      isArchivedView: true,
+      isEditable: false,
+      selectedWeek,
+      realWeek,
+      archive,
+      students: archive.students,
+      violations: Array.isArray(archive.violations) ? archive.violations : [],
+      periodLogs: Array.isArray(archive.periodLogs) ? archive.periodLogs : []
+    };
+  }
+  const weekViolations = appState.violations.filter(v => !v.week || Number(v.week) === selectedWeek);
+  const weekPeriodLogs = appState.periodLogs.filter(p => !p.week || Number(p.week) === selectedWeek);
+  return {
+    isArchivedView: false,
+    isEditable: selectedWeek === realWeek,
+    selectedWeek,
+    realWeek,
+    archive: null,
+    students: appState.students,
+    violations: weekViolations,
+    periodLogs: weekPeriodLogs
+  };
+}
+
+function getNextMondayRolloverInfo(nowDate = new Date()) {
+  const now = nowDate instanceof Date ? nowDate : new Date(nowDate);
+  const currentWeek = getAutoSchoolWeek();
+  const curWeekMondayMs = SCHOOL_YEAR_START_MONDAY.getTime() + (currentWeek - 1) * 7 * 86400000;
+  let nextMondayMs = curWeekMondayMs + 7 * 86400000;
+  while (nextMondayMs <= now.getTime()) {
+    nextMondayMs += 7 * 86400000;
+  }
+  const diffMs = Math.max(0, nextMondayMs - now.getTime());
+  const totalMins = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMins / (24 * 60));
+  const hours = Math.floor((totalMins % (24 * 60)) / 60);
+  const mins = totalMins % 60;
+  const nextMondayDate = new Date(nextMondayMs);
+  const dateLabel = `${String(nextMondayDate.getDate()).padStart(2, '0')}/${String(nextMondayDate.getMonth() + 1).padStart(2, '0')}/${nextMondayDate.getFullYear()} 00:00`;
+  return {
+    currentWeek,
+    nextWeek: Math.min(35, currentWeek + 1),
+    nextMondayDate,
+    dateLabel,
+    days,
+    hours,
+    minutes: mins,
+    formatted: `${days} ngày ${hours}g ${mins}p`
+  };
+}
+
+function checkAndPerformClientMondayRollover(options = {}) {
+  const curWeek = getAutoSchoolWeek();
+  const lastStored = parseInt(localStorage.getItem("10A12_LAST_ACTIVE_WEEK") || "0", 10) || 0;
+
+  if (!lastStored) {
+    localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(curWeek));
+    appState.lastAutoRolloverWeek = curWeek;
+    return { rolledOver: false, initialized: true, currentWeek: curWeek };
+  }
+
+  if (lastStored >= curWeek) {
+    return { rolledOver: false, currentWeek: curWeek };
+  }
+
+  const weekToArchive = curWeek - 1;
+  if (!appState.weeklyArchives) appState.weeklyArchives = {};
+  const archiveKey = `TUAN_${weekToArchive}`;
+
+  if (weekToArchive >= 1 && !appState.weeklyArchives[archiveKey]) {
+    const sum = appState.students.reduce((acc, s) => acc + parseScore(s.diemThiDua, 100), 0);
+    const avgStr = (appState.students.length ? (sum / appState.students.length).toFixed(1) : "100.0") + "đ";
+    const weekViolations = (appState.violations || []).filter(v => !v.week || Number(v.week) === weekToArchive);
+    const weekPeriodLogs = (appState.periodLogs || []).filter(p => !p.week || Number(p.week) === weekToArchive);
+    const archiveObj = {
+      week: weekToArchive,
+      lockedAt: new Date().toLocaleString("vi-VN"),
+      lockedBy: "Tự động 00:00 Thứ 2",
+      avgScore: avgStr,
+      students: JSON.parse(JSON.stringify(appState.students)),
+      violations: JSON.parse(JSON.stringify(weekViolations)),
+      periodLogs: JSON.parse(JSON.stringify(weekPeriodLogs))
+    };
+    appState.weeklyArchives[archiveKey] = archiveObj;
+
+    if (!options.skipCloudSync && appState.authToken && appState.roleLevel === "GVCN") {
+      callApi("saveWeeklyArchive", { archiveKey, archive: archiveObj }, "POST");
+    }
+  }
+
+  appState.students.forEach(s => {
+    s.diemThiDua = 100;
+  });
+
+  if (appState.dutyAssignments && typeof appState.dutyAssignments === "object") {
+    Object.keys(appState.dutyAssignments).forEach(sessKey => {
+      if (appState.dutyAssignments[sessKey]) {
+        appState.dutyAssignments[sessKey].status = "CHUA_DANH_GIA";
+        appState.dutyAssignments[sessKey].note = "";
+      }
+    });
+  }
+
+  appState.selectedWeek = curWeek;
+  appState.lastAutoRolloverWeek = curWeek;
+  appState.lastAutoRolloverAt = new Date().toLocaleString("vi-VN");
+  localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(curWeek));
+  localStorage.setItem("10A12_LAST_ROLLOVER_AT", appState.lastAutoRolloverAt);
+  saveStateToLocal();
+
+  if (!options.skipCloudSync && appState.authToken && appState.roleLevel === "GVCN") {
+    callApi("resetWeeklyScores", {}, "POST");
+    callApi("saveConfig", {
+      lastAutoRolloverWeek: String(curWeek),
+      lastAutoRolloverAt: appState.lastAutoRolloverAt
+    }, "POST");
+  }
+
+  if (typeof buildAutoWeekDropdown === "function" && typeof document !== "undefined" && document.getElementById("currentWeekSelect")) {
+    buildAutoWeekDropdown();
+    if (typeof renderAllSections === "function") renderAllSections();
+  }
+
+  return {
+    rolledOver: true,
+    archivedWeek: weekToArchive,
+    archivedKey: archiveKey,
+    currentWeek: curWeek,
+    rolledOverAt: appState.lastAutoRolloverAt
+  };
+}
+
+function updateWeeklyRolloverUI() {
+  const info = getNextMondayRolloverInfo();
+  const countdownEl = document.getElementById("weeklyRolloverCountdownText");
+  if (countdownEl) {
+    countdownEl.innerText = `Sau ${info.formatted} (00:00 Thứ 2 • ${info.dateLabel.split(" ")[0]})`;
+  }
+  const lastAtEl = document.getElementById("autoRolloverLastTime");
+  if (lastAtEl) {
+    lastAtEl.innerText = appState.lastAutoRolloverAt || "Sẵn sàng chốt sổ vào 00:00 Thứ 2 tới";
+  }
+  const triggerBadgeEl = document.getElementById("autoRolloverTriggerBadge");
+  if (triggerBadgeEl) {
+    triggerBadgeEl.innerHTML = appState.mondayRolloverTriggerActive
+      ? `<i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i> Trigger Apps Script 00:00 T2: Đã bật`
+      : `<i class="fa-solid fa-clock text-amber-600 mr-1"></i> Tự động khi mở sổ T2 (hoặc bật Trigger GS)`;
   }
 }
 
@@ -224,6 +533,15 @@ function getSessionLabel(key) {
   return map[key] || "Sáng Thứ 2";
 }
 
+function getSessionKeyByName(name) {
+  const map = {
+    "Sáng Thứ 2": "T2_SANG", "Chiều Thứ 2": "T2_CHIEU",
+    "Sáng Thứ 3": "T3_SANG", "Chiều Thứ 3": "T3_CHIEU",
+    "Sáng Thứ 4": "T4_SANG", "Sáng Thứ 5": "T5_SANG", "Sáng Thứ 6": "T6_SANG"
+  };
+  return map[name] || "T2_SANG";
+}
+
 function syncAttendanceSessionOnLoad() {
   const autoKey = getAutoSessionKey();
   appState.currentSessionKey = autoKey;
@@ -236,68 +554,84 @@ function syncAttendanceSessionOnLoad() {
 }
 
 let appState = {
-  currentUser: JSON.parse(localStorage.getItem("10A12_SESSION_USER")) || null,
+  currentUser: safeJsonParse(localStorage.getItem("10A12_SESSION_USER"), null),
+  authToken: localStorage.getItem("10A12_AUTH_TOKEN") || "",
   roleLevel: "GUEST",
   allowStudentLeaderEdit: localStorage.getItem("10A12_ALLOW_EDIT") !== "false",
-  
+
   selectedWeek: getAutoSchoolWeek(),
   currentSessionKey: getAutoSessionKey(),
   currentSessionLabel: getSessionLabel(getAutoSessionKey()),
   currentCampaignId: "KY1_100K",
   currentStudentTeamFilter: "ALL",
-  
-  students: JSON.parse(localStorage.getItem("10A12_STUDENTS_V9")) || DEFAULT_STUDENTS_10A12,
-  violations: JSON.parse(localStorage.getItem("10A12_VIOLATIONS_V9")) || [],
-  campaigns: JSON.parse(localStorage.getItem("10A12_CAMPAIGNS_V9")) || [
+
+  students: safeJsonParse(localStorage.getItem("10A12_STUDENTS_V9"), null) || DEFAULT_STUDENTS_10A12,
+  violations: safeJsonParse(localStorage.getItem("10A12_VIOLATIONS_V9"), []),
+  campaigns: safeJsonParse(localStorage.getItem("10A12_CAMPAIGNS_V9"), null) || [
     { id: "KY1_100K", title: "Quỹ Lớp Học Kỳ 1", target: 100000, status: "Đang thu" },
     { id: "KY2_STEM", title: "Quỹ Hoạt Động Trải Nghiệm & STEM", target: 50000, status: "Đang thu" }
   ],
-  fundPayments: JSON.parse(localStorage.getItem("10A12_PAYMENTS_V9")) || [],
-  cashbook: JSON.parse(localStorage.getItem("10A12_CASHBOOK_V9")) || [
+  fundPayments: safeJsonParse(localStorage.getItem("10A12_PAYMENTS_V9"), []),
+  cashbook: safeJsonParse(localStorage.getItem("10A12_CASHBOOK_V9"), null) || [
     { code: "CHI_01", time: "15/10/2026", type: "CHI", category: "Vệ sinh & Cơ sở vật chất", amount: 150000, author: "Thủ quỹ lớp", note: "Mua chổi quét lớp và nước lau sàn", status: "DA_DUYET" }
   ],
-  auditLogs: JSON.parse(localStorage.getItem("10A12_AUDIT_LOGS")) || [],
-  periodLogs: JSON.parse(localStorage.getItem("10A12_PERIODS_V9")) || [],
-  letters: JSON.parse(localStorage.getItem("10A12_LETTERS_V9")) || [],
-  criteriaList: JSON.parse(localStorage.getItem("10A12_CRITERIA_V9")) || DEFAULT_CRITERIA_LIST,
-  attendanceRecords: JSON.parse(localStorage.getItem("10A12_ATT_RECORDS")) || {},
-  dutyAssignments: JSON.parse(localStorage.getItem("10A12_DUTY_7SESSIONS")) || {},
-  volunteerLaborList: JSON.parse(localStorage.getItem("10A12_VOLUNTEER_LABOR")) || [],
-  vtmEvents: JSON.parse(localStorage.getItem("10A12_VTM_EVENTS")) || [],
-  classMedia: JSON.parse(localStorage.getItem("10A12_CLASS_MEDIA")) || [],
+  auditLogs: safeJsonParse(localStorage.getItem("10A12_AUDIT_LOGS"), []),
+  periodLogs: safeJsonParse(localStorage.getItem("10A12_PERIODS_V9"), []),
+  letters: safeJsonParse(localStorage.getItem("10A12_LETTERS_V9"), []),
+  criteriaList: safeJsonParse(localStorage.getItem("10A12_CRITERIA_V9"), null) || DEFAULT_CRITERIA_LIST,
+  attendanceRecords: safeJsonParse(localStorage.getItem("10A12_ATT_RECORDS"), {}),
+  dutyAssignments: safeJsonParse(localStorage.getItem("10A12_DUTY_7SESSIONS"), {}),
+  volunteerLaborList: safeJsonParse(localStorage.getItem("10A12_VOLUNTEER_LABOR"), []),
+  vtmEvents: safeJsonParse(localStorage.getItem("10A12_VTM_EVENTS"), []),
+  classMedia: safeJsonParse(localStorage.getItem("10A12_CLASS_MEDIA"), []),
   customTicker: localStorage.getItem("10A12_CUSTOM_TICKER") || "",
   tkbCustomImage: localStorage.getItem("10A12_TKB_IMAGE") || "tkb_10a12.png",
-  weeklyArchives: JSON.parse(localStorage.getItem("10A12_WEEKLY_ARCHIVES")) || {},
-  seatingHistory: JSON.parse(localStorage.getItem("10A12_SEATING_HISTORY")) || [],
-  
+  tkbUpdatedAt: localStorage.getItem("10A12_TKB_UPDATED_AT") || "",
+  tkbConfig: normalizeTkbConfig(safeJsonParse(localStorage.getItem("10A12_TKB_CONFIG"), null)),
+  lastAutoRolloverWeek: parseInt(localStorage.getItem("10A12_LAST_ACTIVE_WEEK") || "0", 10) || getAutoSchoolWeek(),
+  lastAutoRolloverAt: localStorage.getItem("10A12_LAST_ROLLOVER_AT") || "",
+  mondayRolloverTriggerActive: localStorage.getItem("10A12_TRIGGER_ACTIVE") === "true",
+  weeklyArchives: safeJsonParse(localStorage.getItem("10A12_WEEKLY_ARCHIVES"), {}),
+  seatingHistory: safeJsonParse(localStorage.getItem("10A12_SEATING_HISTORY"), []),
+
   fundSummary: { totalIncome: 0, totalExpense: 150000, balance: -150000 },
   selectedStudentForDetail: null
 };
 
-let currentSeatingLayout = JSON.parse(localStorage.getItem("classroom_10A12_glass_v9")) || DEFAULT_SEATING_LAYOUT;
+let currentSeatingLayout = safeJsonParse(localStorage.getItem("classroom_10A12_glass_v9"), null) || DEFAULT_SEATING_LAYOUT;
 let selectedSeatFirst = null;
 
 function saveStateToLocal() {
-  localStorage.setItem("10A12_STUDENTS_V9", JSON.stringify(appState.students));
-  localStorage.setItem("10A12_VIOLATIONS_V9", JSON.stringify(appState.violations));
-  localStorage.setItem("10A12_CAMPAIGNS_V9", JSON.stringify(appState.campaigns));
-  localStorage.setItem("10A12_PAYMENTS_V9", JSON.stringify(appState.fundPayments));
-  localStorage.setItem("10A12_CASHBOOK_V9", JSON.stringify(appState.cashbook));
-  localStorage.setItem("10A12_AUDIT_LOGS", JSON.stringify(appState.auditLogs));
-  localStorage.setItem("10A12_PERIODS_V9", JSON.stringify(appState.periodLogs));
-  localStorage.setItem("10A12_LETTERS_V9", JSON.stringify(appState.letters));
-  localStorage.setItem("10A12_ATT_RECORDS", JSON.stringify(appState.attendanceRecords));
-  localStorage.setItem("10A12_DUTY_7SESSIONS", JSON.stringify(appState.dutyAssignments));
-  localStorage.setItem("10A12_VOLUNTEER_LABOR", JSON.stringify(appState.volunteerLaborList));
-  localStorage.setItem("10A12_VTM_EVENTS", JSON.stringify(appState.vtmEvents));
-  localStorage.setItem("10A12_CLASS_MEDIA", JSON.stringify(appState.classMedia));
-  localStorage.setItem("classroom_10A12_glass_v9", JSON.stringify(currentSeatingLayout));
-  localStorage.setItem("10A12_ALLOW_EDIT", String(appState.allowStudentLeaderEdit));
-  localStorage.setItem("10A12_CRITERIA_V9", JSON.stringify(appState.criteriaList));
-  localStorage.setItem("10A12_CUSTOM_TICKER", appState.customTicker);
-  localStorage.setItem("10A12_TKB_IMAGE", appState.tkbCustomImage);
-  localStorage.setItem("10A12_WEEKLY_ARCHIVES", JSON.stringify(appState.weeklyArchives));
-  localStorage.setItem("10A12_SEATING_HISTORY", JSON.stringify(appState.seatingHistory));
+  try {
+    localStorage.setItem("10A12_STUDENTS_V9", JSON.stringify(appState.students));
+    localStorage.setItem("10A12_VIOLATIONS_V9", JSON.stringify(appState.violations));
+    localStorage.setItem("10A12_CAMPAIGNS_V9", JSON.stringify(appState.campaigns));
+    localStorage.setItem("10A12_PAYMENTS_V9", JSON.stringify(appState.fundPayments));
+    localStorage.setItem("10A12_CASHBOOK_V9", JSON.stringify(appState.cashbook));
+    localStorage.setItem("10A12_AUDIT_LOGS", JSON.stringify(appState.auditLogs));
+    localStorage.setItem("10A12_PERIODS_V9", JSON.stringify(appState.periodLogs));
+    localStorage.setItem("10A12_LETTERS_V9", JSON.stringify(appState.letters));
+    localStorage.setItem("10A12_ATT_RECORDS", JSON.stringify(appState.attendanceRecords));
+    localStorage.setItem("10A12_DUTY_7SESSIONS", JSON.stringify(appState.dutyAssignments));
+    localStorage.setItem("10A12_VOLUNTEER_LABOR", JSON.stringify(appState.volunteerLaborList));
+    localStorage.setItem("10A12_VTM_EVENTS", JSON.stringify(appState.vtmEvents));
+    localStorage.setItem("10A12_CLASS_MEDIA", JSON.stringify(appState.classMedia));
+    localStorage.setItem("classroom_10A12_glass_v9", JSON.stringify(currentSeatingLayout));
+    localStorage.setItem("10A12_ALLOW_EDIT", String(appState.allowStudentLeaderEdit));
+    localStorage.setItem("10A12_CRITERIA_V9", JSON.stringify(appState.criteriaList));
+    localStorage.setItem("10A12_CUSTOM_TICKER", appState.customTicker || "");
+    localStorage.setItem("10A12_TKB_IMAGE", appState.tkbCustomImage || "tkb_10a12.png");
+    localStorage.setItem("10A12_TKB_UPDATED_AT", appState.tkbUpdatedAt || "");
+    localStorage.setItem("10A12_TKB_CONFIG", JSON.stringify(getActiveTkbConfig()));
+    localStorage.setItem("10A12_LAST_ROLLOVER_AT", appState.lastAutoRolloverAt || "");
+    localStorage.setItem("10A12_TRIGGER_ACTIVE", String(Boolean(appState.mondayRolloverTriggerActive)));
+    localStorage.setItem("10A12_WEEKLY_ARCHIVES", JSON.stringify(appState.weeklyArchives));
+    localStorage.setItem("10A12_SEATING_HISTORY", JSON.stringify(appState.seatingHistory));
+    return true;
+  } catch (err) {
+    console.warn("[Storage Quota Warning]", err);
+    return false;
+  }
 }
 
 // ==================== 7. XÁC THỰC PHÂN QUYỀN RBAC ====================
@@ -311,91 +645,176 @@ function initAuthSession() {
   }
 }
 
-function handleUserLogin(e) {
+function matchStudentAccount(list, rawLower, cleanRawInput, baseInput, baseRaw) {
+  if (!Array.isArray(list)) return null;
+  return list.find(s => {
+    const rawAccount = String(s.taiKhoan || s.tenDangNhap || "").toLowerCase().trim();
+    const normAccount = removeVietnameseTones(rawAccount.replace(/\.k58qt$/i, ""));
+    const normFullAccount = removeVietnameseTones(rawAccount);
+    const sCleanName = removeVietnameseTones(s.hoTen);
+    const sCode = removeVietnameseTones(s.id);
+    return (rawAccount && rawAccount === rawLower) ||
+           (rawAccount && rawAccount === `${baseRaw}.k58qt`) ||
+           (normFullAccount && normFullAccount === cleanRawInput) ||
+           (normAccount && normAccount === baseInput) ||
+           (sCleanName && sCleanName === baseInput) ||
+           (sCode && sCode === baseInput);
+  }) || null;
+}
+
+async function handleUserLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
   const rawInput = document.getElementById("authUsernameInput").value.trim();
   const cleanInput = removeVietnameseTones(rawInput);
+  const rawLower = rawInput.toLowerCase().replace(/\s+/g, "");
   const password = document.getElementById("authPasswordInput").value.trim();
   const errorBox = document.getElementById("loginErrorMsg");
+  const submitBtn = document.getElementById("btnSubmitLogin");
+  const prevBtnHtml = submitBtn ? submitBtn.innerHTML : "";
 
   if (errorBox) errorBox.classList.add("hidden");
-
-  // 1. Đăng nhập GVCN
-  const savedGvcnPass = localStorage.getItem("10A12_GVCN_PASSWORD") || "123456";
-  if (cleanInput === "gvcn" && password === savedGvcnPass) {
-    appState.currentUser = {
-      username: "gvcn",
-      fullName: "ThS. Trần Dương Quốc Mẫn",
-      role: "GVCN & Phó Bí thư Đoàn trường",
-      roleLevel: "GVCN"
-    };
-    finishLogin();
+  if (!rawInput || !password) {
+    if (errorBox) {
+      errorBox.innerText = "Vui lòng nhập đầy đủ Tên đăng nhập và Mật khẩu!";
+      errorBox.classList.remove("hidden");
+    }
     return;
   }
 
-  // 2. Đăng nhập Học sinh & Cán sự
-  const matched = appState.students.find(s => {
-    const sCleanName = removeVietnameseTones(s.hoTen);
-    const sCode = s.id ? s.id.toLowerCase() : "";
-    return sCleanName === cleanInput || sCode === cleanInput;
-  });
-
-  if (matched) {
-    const passExpected = matched.matKhau || "123456";
-    if (password === passExpected) {
-      let roleLevel = "STUDENT";
-      const chucVu = (matched.chucVu || "").toLowerCase();
-
-      if (chucVu.includes("lớp trưởng") || chucVu.includes("lớp phó học tập") || chucVu.includes("bí thư")) {
-        roleLevel = "LEADER";
-      } else if (chucVu.includes("thủ quỹ")) {
-        roleLevel = "TREASURER";
-      } else if (chucVu.includes("lao động")) {
-        roleLevel = "LABOR";
-      } else if (chucVu.includes("văn thể mỹ") || chucVu.includes("vtm")) {
-        roleLevel = "VTM";
-      } else if (chucVu.includes("tổ trưởng") || chucVu.includes("cờ đỏ") || chucVu.includes("thi đua")) {
-        roleLevel = "LEADER";
-      }
-
-      appState.currentUser = {
-        username: cleanInput,
-        studentId: matched.id,
-        fullName: matched.hoTen,
-        role: matched.chucVu || "Học sinh",
-        roleLevel: roleLevel,
-        team: matched.to
-      };
-      finishLogin();
-      return;
-    }
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Đang xác thực...`;
   }
 
-  if (errorBox) {
-    errorBox.innerText = "Tài khoản hoặc mật khẩu không đúng! Hãy nhập họ tên viết liền không dấu (VD: nguyentanan).";
-    errorBox.classList.remove("hidden");
+  try {
+    // 1. Thử xác thực trực tiếp qua máy chủ Apps Script để nhận Auth Token
+    const cloudRes = await callApi("loginUser", { username: rawInput, password }, "POST");
+    if (cloudRes && cloudRes.status === "success" && cloudRes.user) {
+      appState.authToken = cloudRes.token || "";
+      localStorage.setItem("10A12_AUTH_TOKEN", appState.authToken);
+      appState.currentUser = cloudRes.user;
+      await finishLogin(true);
+      return;
+    }
+
+    // Chỉ chặn ngay nếu máy chủ xác nhận rõ là SAI MẬT KHẨU (hoặc GVCN nhập sai mật khẩu)
+    const isGvcnInput = (cleanInput === "gvcn" || cleanInput === "gvcnk58qt" || rawLower === "gvcn" || rawLower === "gvcn.k58qt");
+    if (cloudRes && cloudRes.status === "error") {
+      if (cloudRes.errorCode === "WRONG_PASSWORD" || (isGvcnInput && String(cloudRes.message || "").toLowerCase().includes("mật khẩu"))) {
+        if (errorBox) {
+          errorBox.innerText = cloudRes.message || "Mật khẩu không chính xác!";
+          errorBox.classList.remove("hidden");
+        }
+        return;
+      }
+    }
+
+    // 2. Fallback thông minh (khi mất mạng, DanhSach trên Sheets chưa nạp dữ liệu, hoặc URL GAS cũ)
+    const savedGvcnPass = localStorage.getItem("10A12_GVCN_PASSWORD") || "123456";
+    if (isGvcnInput && password === savedGvcnPass) {
+      appState.authToken = "";
+      localStorage.removeItem("10A12_AUTH_TOKEN");
+      appState.currentUser = {
+        username: "gvcn",
+        fullName: "ThS. Trần Dương Quốc Mẫn",
+        role: "GVCN & Phó Bí thư Đoàn trường",
+        roleLevel: "GVCN"
+      };
+      finishLogin(false);
+      return;
+    }
+
+    const baseInput = cleanInput.replace(/k58qt$/, "");
+    const baseRaw = rawLower.replace(/\.k58qt$/i, "");
+
+    let matched = matchStudentAccount(appState.students, rawLower, cleanInput, baseInput, baseRaw);
+    if (!matched && typeof DEFAULT_STUDENTS_10A12 !== "undefined") {
+      matched = matchStudentAccount(DEFAULT_STUDENTS_10A12, rawLower, cleanInput, baseInput, baseRaw);
+    }
+
+    if (matched) {
+      const passExpected = String(matched.matKhau || "123456").trim();
+      if (password === passExpected) {
+        let roleLevel = "STUDENT";
+        const chucVu = (matched.chucVu || "").toLowerCase();
+
+        if (chucVu.includes("lớp trưởng") || chucVu.includes("lớp phó học tập") || chucVu.includes("bí thư")) {
+          roleLevel = "LEADER";
+        } else if (chucVu.includes("thủ quỹ")) {
+          roleLevel = "TREASURER";
+        } else if (chucVu.includes("lao động")) {
+          roleLevel = "LABOR";
+        } else if (chucVu.includes("văn thể mỹ") || chucVu.includes("vtm")) {
+          roleLevel = "VTM";
+        } else if (chucVu.includes("tổ trưởng") || chucVu.includes("cờ đỏ") || chucVu.includes("thi đua")) {
+          roleLevel = "LEADER";
+        }
+
+        appState.authToken = "";
+        localStorage.removeItem("10A12_AUTH_TOKEN");
+        appState.currentUser = {
+          username: matched.taiKhoan || matched.tenDangNhap || removeVietnameseTones(matched.hoTen) || rawLower,
+          studentId: matched.id,
+          fullName: matched.hoTen,
+          role: matched.chucVu || "Học sinh",
+          roleLevel: roleLevel,
+          team: matched.to
+        };
+        finishLogin(false);
+        return;
+      } else {
+        if (errorBox) {
+          errorBox.innerText = "Mật khẩu không chính xác! (Mật khẩu mặc định: 123456)";
+          errorBox.classList.remove("hidden");
+        }
+        return;
+      }
+    }
+
+    if (errorBox) {
+      errorBox.innerText = `Không tìm thấy tài khoản "${rawInput}". Gợi ý học sinh: nguyentanan hoặc HS01 (MK: 123456).`;
+      errorBox.classList.remove("hidden");
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = prevBtnHtml || `<span>Đăng nhập Hệ thống</span><i class="fa-solid fa-arrow-right"></i>`;
+    }
   }
 }
 
-function finishLogin() {
+async function finishLogin(shouldSyncCloud = false) {
   localStorage.setItem("10A12_SESSION_USER", JSON.stringify(appState.currentUser));
   const authScreen = document.getElementById("authScreen");
   if (authScreen) authScreen.classList.add("hidden");
   applyRolePermissions();
   renderAllSections();
+  if (shouldSyncCloud && appState.authToken) {
+    await syncWithCloud();
+  }
 }
 
 function handleUserLogout() {
   if (confirm("Thầy/bạn có chắc chắn muốn đăng xuất?")) {
     appState.currentUser = null;
+    appState.authToken = "";
     localStorage.removeItem("10A12_SESSION_USER");
+    localStorage.removeItem("10A12_AUTH_TOKEN");
     location.reload();
   }
 }
 
+function updateMasterSwitchButtonUI() {
+  const btn = document.getElementById("btnMasterSwitch");
+  if (!btn) return;
+  btn.innerHTML = appState.allowStudentLeaderEdit
+    ? `<i class="fa-solid fa-toggle-on text-emerald-600"></i><span class="hidden md:inline ml-1">Cán sự: Mở ghi</span>`
+    : `<i class="fa-solid fa-toggle-off text-slate-400"></i><span class="hidden md:inline ml-1">Cán sự: Khóa ghi</span>`;
+}
+
 function applyRolePermissions() {
   if (!appState.currentUser) return;
-  const role = appState.currentUser.roleLevel;
+  const role = appState.currentUser.roleLevel || "GUEST";
   appState.roleLevel = role;
 
   const nameEl = document.getElementById("currentUserNameText");
@@ -405,14 +824,40 @@ function applyRolePermissions() {
 
   const isGVCN = (role === "GVCN");
   const isStudent = (role === "STUDENT");
+  const hasStudentPortal = Boolean(appState.currentUser.studentId);
+  const roleStr = String(appState.currentUser.role || "").toLowerCase();
+  const canEditSeating = isGVCN || roleStr.includes("lớp trưởng");
+  const canEditFund = isGVCN || role === "TREASURER";
+  const canEditVtm = isGVCN || role === "VTM";
 
   toggleEl("btnMasterSwitch", isGVCN);
+  updateMasterSwitchButtonUI();
   toggleEl("btn-tab-tam-tu", isGVCN);
   toggleEl("btn-side-tab-tam-tu", isGVCN);
   toggleEl("btn-tab-cai-dat", isGVCN);
   toggleEl("btn-side-tab-cai-dat", isGVCN);
-  toggleEl("btn-tab-ca-nhan", isStudent);
-  toggleEl("btn-side-tab-ca-nhan", isStudent);
+  toggleEl("btn-tab-ca-nhan", hasStudentPortal);
+  toggleEl("btn-side-tab-ca-nhan", hasStudentPortal);
+
+  toggleEl("btnLockWeekAction", isGVCN);
+  toggleEl("btnRotateSeating", canEditSeating);
+  toggleEl("btnSaveSeating", canEditSeating);
+  toggleEl("btnSaveSeatingHistory", canEditSeating);
+  toggleEl("btnUploadTkb", isGVCN);
+  toggleEl("btnEditTkb", isGVCN);
+  toggleEl("btnAddVtmEvent", canEditVtm);
+  toggleEl("btnUploadMedia", canEditVtm);
+  toggleEl("btnOpenNewCampaign", canEditFund);
+  toggleEl("btnManageCampaigns", canEditFund);
+  toggleEl("btnOpenAddIncome", canEditFund);
+  toggleEl("btnOpenAddExpense", canEditFund);
+  toggleEl("btnSaveFundState", canEditFund);
+  toggleEl("btnImportExcel", isGVCN);
+  toggleEl("btnAddNewStudent", isGVCN);
+  toggleEl("btnAssignRole", isGVCN);
+  toggleEl("btnResetWeeklyScores", isGVCN);
+  toggleEl("btnSaveStudentChanges", isGVCN);
+  toggleEl("btnDeleteStudent", isGVCN);
 
   if (isStudent) switchTab("tab-ca-nhan");
 }
@@ -424,16 +869,12 @@ function toggleEl(id, show) {
   else el.classList.add("hidden");
 }
 
-function toggleMasterEditSwitch() {
+async function toggleMasterEditSwitch() {
   if (appState.roleLevel !== "GVCN") return;
   appState.allowStudentLeaderEdit = !appState.allowStudentLeaderEdit;
   saveStateToLocal();
-  const btn = document.getElementById("btnMasterSwitch");
-  if (btn) {
-    btn.innerHTML = appState.allowStudentLeaderEdit 
-      ? `<i class="fa-solid fa-toggle-on text-emerald-600"></i><span class="hidden md:inline ml-1">Cán sự: Mở ghi</span>`
-      : `<i class="fa-solid fa-toggle-off text-slate-400"></i><span class="hidden md:inline ml-1">Cán sự: Khóa ghi</span>`;
-  }
+  updateMasterSwitchButtonUI();
+  await callApi("saveConfig", { allowStudentLeaderEdit: appState.allowStudentLeaderEdit }, "POST");
   alert(appState.allowStudentLeaderEdit ? "Đã MỞ quyền ghi nhận nề nếp cho Ban cán sự lớp!" : "Đã KHÓA quyền ghi nề nếp của Ban cán sự lớp!");
   if (typeof renderAttendanceSession === "function") renderAttendanceSession();
 }
@@ -443,12 +884,12 @@ function updateCelebrationTicker() {
   const tickerEl = document.getElementById("topBannerTicker");
   const dateEl = document.getElementById("topBannerDate");
   const now = new Date();
-  
+
   if (dateEl) dateEl.innerText = now.toLocaleDateString("vi-VN");
   if (!tickerEl) return;
 
   if (appState.customTicker && appState.customTicker.trim() !== "") {
-    tickerEl.innerHTML = `<i class="fa-solid fa-bullhorn mr-1.5 text-amber-300"></i><b>Lời nhắn của Thầy:</b> ${appState.customTicker}`;
+    tickerEl.innerHTML = `<i class="fa-solid fa-bullhorn mr-1.5 text-amber-300"></i><b>Lời nhắn của Thầy:</b> ${escapeHtml(appState.customTicker)}`;
     return;
   }
 
@@ -468,12 +909,17 @@ function updateCelebrationTicker() {
   }
 }
 
-function saveCustomBannerTicker() {
+async function saveCustomBannerTicker() {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ GVCN mới có quyền cập nhật thông điệp tiêu đề lớp!");
+    return;
+  }
   const input = document.getElementById("customBannerTickerInput");
   if (!input) return;
   appState.customTicker = input.value.trim();
   saveStateToLocal();
   updateCelebrationTicker();
+  await callApi("saveConfig", { customTicker: appState.customTicker }, "POST");
   alert("Đã cập nhật thông điệp lên thanh tiêu đề!");
 }
 
@@ -498,8 +944,9 @@ function updateLiveDashboardEngine() {
   const dayKey = `t${day + 1}`;
   const isMorning = currentMinutes <= 720;
 
-  if (day >= 1 && day <= 3) {
-    const periods = isMorning ? TKB_CONFIG_SO3.morning : TKB_CONFIG_SO3.afternoon;
+  if (day >= 1 && day <= 6) {
+    const activeTkb = getActiveTkbConfig();
+    const periods = isMorning ? activeTkb.morning : activeTkb.afternoon;
     const timeRanges = isMorning ? [
       { p: 1, start: 7 * 60, end: 7 * 60 + 45 },
       { p: 2, start: 7 * 60 + 50, end: 8 * 60 + 35 },
@@ -517,7 +964,7 @@ function updateLiveDashboardEngine() {
       const pData = periods.find(p => p.period === cur.p);
       const subject = pData ? pData[dayKey] : "-";
       periodName = `${isMorning ? 'Sáng' : 'Chiều'} • Tiết ${cur.p}`;
-      subjectDetail = subject !== "-" ? subject : "Tự học / Tiết chờ";
+      subjectDetail = (subject && subject !== "-" && subject !== "—") ? subject : "Tự học / Tiết chờ";
       
       const total = cur.end - cur.start;
       const elapsed = currentMinutes - cur.start;
@@ -535,13 +982,45 @@ function updateLiveDashboardEngine() {
 
   if (progressLabel) progressLabel.innerText = subjectDetail !== "Không có môn học" ? `Môn: ${subjectDetail}` : "Ngoài giờ tiết học";
   if (progressRemaining) progressRemaining.innerText = remain > 0 ? `Còn ${remain}p (${percent}%)` : `${percent}%`;
-  if (progressBar) progressBar.style.width = `${percent}%`;
+  if (progressBar && progressBar.style) progressBar.style.width = `${percent}%`;
+}
+
+function renderTkbVersionLabels() {
+  const cfg = getActiveTkbConfig();
+  const vLabel = cfg.versionLabel || "Số 3";
+  const eDate = cfg.effectiveDate || "";
+  const hasCustomImg = Boolean(appState.tkbCustomImage && appState.tkbCustomImage !== "tkb_10a12.png");
+
+  const setTxt = (id, txt) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = txt;
+  };
+
+  setTxt("btn-tab-tkb", `TKB ${vLabel}`);
+  setTxt("navTkbSideLabel", `Thời khóa biểu (${vLabel})`);
+  setTxt("liveBannerSub", `THỜI KHÓA BIỂU ${vLabel.toUpperCase()}${eDate ? ` • TỪ ${eDate}` : ""}`);
+  setTxt("dashTkbTitle", `TKB ${vLabel}${eDate ? ` (${eDate})` : ""}`);
+  setTxt("tkbTabHeading", `Thời Khóa Biểu Lớp 10A12 (${vLabel}${eDate ? ` - Từ ngày ${eDate}` : ""})`);
+  setTxt("sdbTkbHeading", `Sổ Đầu Bài Điện Tử (Theo TKB ${vLabel})`);
+  setTxt("zoomTkbTitle", `Thời Khóa Biểu ${vLabel} - Lớp 10A12`);
+  setTxt("shlTkbRef1", `Thời khóa biểu ${vLabel}`);
+  setTxt("shlTkbRef2", `Thời khóa biểu ${vLabel}`);
+
+  const hintEl = document.getElementById("tkbTableSyncHint");
+  if (hintEl) {
+    if (hasCustomImg && vLabel === "Số 3") {
+      hintEl.classList.remove("hidden");
+    } else {
+      hintEl.classList.add("hidden");
+    }
+  }
 }
 
 // ==================== 10. TAB 1: TỔNG QUAN (LƯỚI 7 Ô BUỔI HỌC CÓ CHI TIẾT LỖI) ====================
 function renderOverviewDashboard() {
-  const avg = appState.students.length > 0
-    ? (appState.students.reduce((acc, s) => acc + (Number(s.diemThiDua) || 0), 0) / appState.students.length).toFixed(1)
+  const scoped = getScopedWeekData();
+  const avg = scoped.students.length > 0
+    ? (scoped.students.reduce((acc, s) => acc + parseScore(s.diemThiDua, 100), 0) / scoped.students.length).toFixed(1)
     : "100.0";
   const avgEl = document.getElementById("dashAvgScore");
   if (avgEl) avgEl.innerText = `${avg}đ`;
@@ -552,17 +1031,19 @@ function renderOverviewDashboard() {
   const fundEl = document.getElementById("dashFundBalance");
   if (fundEl) fundEl.innerText = `${(appState.fundSummary.balance || 0).toLocaleString()} đ`;
 
+  renderTkbVersionLabels();
   renderTT22Summary();
   renderTopCommendations();
   renderSessionsGrid();
 }
 
 function renderTT22Summary() {
-  const total = appState.students.length || 45;
+  const scoped = getScopedWeekData();
+  const total = scoped.students.length || 45;
   let tot = 0, kha = 0, dat = 0, chuadat = 0;
 
-  appState.students.forEach(s => {
-    const pts = Number(s.diemThiDua) || 100;
+  scoped.students.forEach(s => {
+    const pts = parseScore(s.diemThiDua, 100);
     if (pts >= 90) tot++;
     else if (pts >= 70) kha++;
     else if (pts >= 50) dat++;
@@ -574,26 +1055,28 @@ function renderTT22Summary() {
   const datEl = document.getElementById("tt22DatCount");
   const chuadatEl = document.getElementById("tt22ChuaDatCount");
 
-  if (totEl) totEl.innerText = `${tot} HS (${Math.round(tot/total*100)}%)`;
-  if (khaEl) khaEl.innerText = `${kha} HS (${Math.round(kha/total*100)}%)`;
-  if (datEl) datEl.innerText = `${dat} HS (${Math.round(dat/total*100)}%)`;
-  if (chuadatEl) chuadatEl.innerText = `${chuadat} HS (${Math.round(chuadat/total*100)}%)`;
+  if (totEl) totEl.innerText = `${tot} HS (${Math.round(tot / total * 100)}%)`;
+  if (khaEl) khaEl.innerText = `${kha} HS (${Math.round(kha / total * 100)}%)`;
+  if (datEl) datEl.innerText = `${dat} HS (${Math.round(dat / total * 100)}%)`;
+  if (chuadatEl) chuadatEl.innerText = `${chuadat} HS (${Math.round(chuadat / total * 100)}%)`;
 }
 
 function renderTopCommendations() {
   const container = document.getElementById("topCommendationsList");
   if (!container) return;
 
+  const scoped = getScopedWeekData();
   const plusMap = {};
-  appState.violations.forEach(v => {
-    if (v.points > 0) {
-      plusMap[v.studentId] = (plusMap[v.studentId] || 0) + v.points;
+  scoped.violations.forEach(v => {
+    const pts = parseScore(v.points, 0);
+    if (pts > 0) {
+      plusMap[v.studentId] = (plusMap[v.studentId] || 0) + pts;
     }
   });
 
   const topStudents = Object.keys(plusMap)
     .map(stId => {
-      const st = appState.students.find(s => s.id === stId);
+      const st = scoped.students.find(s => s.id === stId) || appState.students.find(s => s.id === stId);
       return { id: stId, name: st ? st.hoTen : stId, team: st ? st.to : "", pts: plusMap[stId] };
     })
     .sort((a, b) => b.pts - a.pts)
@@ -609,7 +1092,7 @@ function renderTopCommendations() {
       <div class="flex items-center gap-2">
         <span class="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-xs flex items-center justify-center">${idx + 1}</span>
         <div>
-          <p class="text-xs font-black text-slate-800">${st.name} <span class="text-[10px] text-slate-500">(${st.team})</span></p>
+          <p class="text-xs font-black text-slate-800">${escapeHtml(st.name)} <span class="text-[10px] text-slate-500">(${escapeHtml(st.team)})</span></p>
           <span class="text-[10px] text-emerald-700 font-medium">Biểu dương việc tốt / phát biểu</span>
         </div>
       </div>
@@ -622,6 +1105,7 @@ function renderSessionsGrid() {
   const container = document.getElementById("sessionsGridContainer");
   if (!container) return;
 
+  const scoped = getScopedWeekData();
   const sessions = [
     { key: "T2_SANG", name: "Sáng Thứ 2", icon: "fa-sun text-amber-500", timeRange: "06:45 - 11:20" },
     { key: "T2_CHIEU", name: "Chiều Thứ 2", icon: "fa-cloud-sun text-indigo-500", timeRange: "13:45 - 16:40" },
@@ -635,14 +1119,15 @@ function renderSessionsGrid() {
   const isGVCN = (appState.roleLevel === "GVCN");
 
   container.innerHTML = sessions.map(sess => {
-    const sessViolations = appState.violations.filter(v => v.time && v.time.includes(sess.name));
-    
+    const sessViolations = scoped.violations.filter(v => v.time && v.time.includes(sess.name));
+
     const absentExcused = sessViolations.filter(v => v.criteria && v.criteria.includes("Có phép")).length;
     const absentUnexcused = sessViolations.filter(v => v.criteria && (v.criteria.includes("Không phép") || v.criteria.includes("K.Phép"))).length;
     const totalAbsent = absentExcused + absentUnexcused;
     const lateCount = sessViolations.filter(v => v.criteria && v.criteria.includes("trễ")).length;
 
-    const totalEvents = sessViolations.filter(v => !v.criteria.includes("Có mặt")).length;
+    const nonPresentEvents = sessViolations.filter(v => !v.criteria || !v.criteria.includes("Có mặt"));
+    const totalEvents = nonPresentEvents.length;
     const isGood = (totalEvents === 0);
 
     return `
@@ -679,31 +1164,34 @@ function renderSessionsGrid() {
               <i class="fa-solid fa-circle-check text-lg"></i>
               <p class="text-[11px] font-bold">Buổi học chấp hành nề nếp xuất sắc.</p>
             </div>
-          ` : sessViolations.filter(v => !v.criteria.includes("Có mặt")).map((v, vIdx) => {
-            const isPlus = v.points > 0;
+          ` : nonPresentEvents.map((v) => {
+            const pts = parseScore(v.points, 0);
+            const isPlus = pts > 0;
             const pointsClass = isPlus ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200';
-            
+            const globalIdx = appState.violations.indexOf(v);
+            const removeKey = v.incidentKey || String(globalIdx);
+
             return `
               <div class="p-2 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1 text-xs hover:border-slate-300 transition">
                 <div class="flex items-center justify-between gap-1">
                   <div class="flex items-center gap-1.5 min-w-0">
                     <span class="w-1.5 h-1.5 rounded-full ${isPlus ? 'bg-emerald-500' : 'bg-rose-500'} shrink-0"></span>
-                    <b class="text-slate-900 font-black truncate">${v.studentName}</b>
-                    <span class="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-bold shrink-0">${getStudentTeam(v.studentId)}</span>
+                    <b class="text-slate-900 font-black truncate">${escapeHtml(v.studentName)}</b>
+                    <span class="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-bold shrink-0">${escapeHtml(getStudentTeam(v.studentId))}</span>
                   </div>
                   <span class="font-mono font-black text-[11px] px-1.5 py-0.5 rounded border ${pointsClass} shrink-0">
-                    ${isPlus ? '+' : ''}${v.points}đ
+                    ${isPlus ? '+' : ''}${pts}đ
                   </span>
                 </div>
-                
+
                 <p class="text-[11px] text-slate-700 leading-snug whitespace-normal break-words pl-3">
-                  ${v.criteria}
+                  ${escapeHtml(v.criteria)}
                 </p>
 
                 <div class="flex items-center justify-between text-[9.5px] text-slate-400 pl-3 pt-0.5 border-t border-slate-50">
-                  <span>${v.note ? `${v.note} • ` : ''}${v.sender || 'Cán sự'}</span>
-                  ${isGVCN ? `
-                    <button onclick="removeViolationItem('${v.incidentKey || vIdx}', '${v.studentId}', ${v.points})" class="text-slate-400 hover:text-rose-600 font-bold p-0.5" title="Xóa bản ghi này">
+                  <span>${v.note ? `${escapeHtml(v.note)} • ` : ''}${escapeHtml(v.sender || 'Cán sự')}</span>
+                  ${isGVCN && scoped.isEditable ? `
+                    <button onclick="removeViolationItem('${escapeAttr(removeKey)}', '${escapeAttr(v.studentId)}', ${pts})" class="text-slate-400 hover:text-rose-600 font-bold p-0.5" title="Xóa bản ghi này">
                       <i class="fa-solid fa-trash-can"></i>
                     </button>
                   ` : ''}
@@ -736,26 +1224,42 @@ function quickGoToAttendanceSession(sessionKey) {
 }
 
 function openQuickScoreModalForSession(sessionName) {
+  const key = getSessionKeyByName(sessionName);
+  appState.currentSessionKey = key;
+  appState.currentSessionLabel = sessionName || getSessionLabel(key);
+  const sel = document.getElementById("attendanceSessionSelect");
+  if (sel) sel.value = key;
   if (typeof openQuickScoreModal === "function") openQuickScoreModal("", "");
 }
 
-function removeViolationItem(incidentKeyOrIdx, studentId, points) {
+async function removeViolationItem(incidentKeyOrIdx, studentId, points) {
   if (appState.roleLevel !== "GVCN") {
     alert("Chỉ Thầy chủ nhiệm mới có quyền xóa bản ghi nề nếp!");
     return;
   }
+  const scoped = getScopedWeekData();
+  if (!scoped.isEditable) {
+    alert("Tuần học này đã lưu trữ, không thể chỉnh sửa bản ghi lịch sử!");
+    return;
+  }
   if (!confirm("Thầy có chắc chắn muốn xóa bản ghi nề nếp này và hoàn lại điểm cho học sinh?")) return;
 
+  const numPts = parseScore(points, 0);
   const st = appState.students.find(s => s.id === studentId);
   if (st) {
-    st.diemThiDua = Math.min(100, Math.max(0, (Number(st.diemThiDua) || 100) - points));
+    st.diemThiDua = Math.max(0, parseScore(st.diemThiDua, 100) - numPts);
   }
 
-  if (incidentKeyOrIdx && String(incidentKeyOrIdx).includes("_")) {
+  let matchedRecord = null;
+  if (incidentKeyOrIdx && !/^\d+$/.test(String(incidentKeyOrIdx))) {
+    matchedRecord = appState.violations.find(v => v.incidentKey === incidentKeyOrIdx);
     appState.violations = appState.violations.filter(v => v.incidentKey !== incidentKeyOrIdx);
   } else {
-    const idx = parseInt(incidentKeyOrIdx);
-    if (!isNaN(idx)) appState.violations.splice(idx, 1);
+    const idx = parseInt(incidentKeyOrIdx, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < appState.violations.length) {
+      matchedRecord = appState.violations[idx];
+      appState.violations.splice(idx, 1);
+    }
   }
 
   saveStateToLocal();
@@ -763,6 +1267,11 @@ function removeViolationItem(incidentKeyOrIdx, studentId, points) {
   renderOverviewDashboard();
   if (typeof renderTeamDisciplineSummaryCards === "function") renderTeamDisciplineSummaryCards();
   if (typeof renderAttendanceSession === "function") renderAttendanceSession();
+
+  const remoteKey = (matchedRecord && matchedRecord.incidentKey) || (incidentKeyOrIdx && !/^\d+$/.test(String(incidentKeyOrIdx)) ? incidentKeyOrIdx : "");
+  if (remoteKey) {
+    await callApi("deleteViolation", { incidentKey: remoteKey }, "POST");
+  }
   alert("Đã xóa bản ghi và hoàn lại điểm cho học sinh thành công!");
 }
 
@@ -782,8 +1291,9 @@ function getTT22Label(pts) {
 function copyParentLookupPortalLink() {
   const currentUrl = window.location.href;
   const lookupUrl = currentUrl.substring(0, currentUrl.lastIndexOf("/")) + "/tracuu.html";
+  const tkbLabel = getActiveTkbConfig().versionLabel || "mới nhất";
   const msg = `Kính gửi Quý Phụ huynh học sinh lớp 10A12 (K58-QT),
-Để theo dõi nề nếp, chuyên cần, TKB Số 3 và tình trạng quỹ lớp của học sinh, kính mời Quý Phụ huynh truy cập Cổng tra cứu điện tử:
+Để theo dõi nề nếp, chuyên cần, TKB ${tkbLabel} và tình trạng quỹ lớp của học sinh, kính mời Quý Phụ huynh truy cập Cổng tra cứu điện tử:
 ${lookupUrl}
 👉 Cách tra cứu: Nhập Họ tên học sinh hoặc Số CCCD 12 số của con.
 GVCN: ThS. Trần Dương Quốc Mẫn. Trân trọng!`;
@@ -795,20 +1305,43 @@ GVCN: ThS. Trần Dương Quốc Mẫn. Trân trọng!`;
   });
 }
 
+const PUBLIC_API_ACTIONS = new Set(["loginUser", "lookupStudent", "getPublicFundStatement"]);
+
 async function callApi(action, data = {}, method = "POST") {
   try {
+    const payload = PUBLIC_API_ACTIONS.has(action)
+      ? { action, ...data }
+      : { action, authToken: appState.authToken || "", ...data };
+
+    let resJson;
     if (method === "GET") {
-      const query = new URLSearchParams({ action, ...data }).toString();
-      const res = await fetch(`${GAS_API_URL}?${query}`);
-      return await res.json();
+      const query = new URLSearchParams(payload).toString();
+      const res = await fetch(`${GAS_API_URL}?${query}`, { redirect: "follow" });
+      resJson = await res.json();
     } else {
       const res = await fetch(GAS_API_URL, {
         method: "POST",
+        redirect: "follow",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action, ...data })
+        body: JSON.stringify(payload)
       });
-      return await res.json();
+      resJson = await res.json();
     }
+
+    if (resJson && resJson.status === "unauthorized" && action !== "loginUser") {
+      appState.authToken = "";
+      localStorage.removeItem("10A12_AUTH_TOKEN");
+      appState.currentUser = null;
+      localStorage.removeItem("10A12_SESSION_USER");
+      const authScreen = document.getElementById("authScreen");
+      if (authScreen) authScreen.classList.remove("hidden");
+      const errBox = document.getElementById("loginErrorMsg");
+      if (errBox) {
+        errBox.innerText = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!";
+        errBox.classList.remove("hidden");
+      }
+    }
+    return resJson;
   } catch (err) {
     console.warn(`[Offline Mode] API ${action}:`, err);
     return { status: "offline", message: "Đang lưu trữ ngoại tuyến." };
@@ -816,18 +1349,79 @@ async function callApi(action, data = {}, method = "POST") {
 }
 
 async function syncWithCloud() {
+  if (!appState.currentUser || !appState.authToken) return null;
   const res = await callApi("getInitialData", {}, "GET");
-  if (res && res.status === "success" && res.students && res.students.length > 0) {
-    appState.students = res.students;
-    if (res.violations) appState.violations = res.violations;
-    if (res.campaigns) appState.campaigns = res.campaigns;
-    if (res.fundPayments) appState.fundPayments = res.fundPayments;
-    if (res.cashbook) appState.cashbook = res.cashbook;
-    if (res.letters) appState.letters = res.letters;
+  if (res && res.status === "success") {
+    if (Array.isArray(res.students) && res.students.length > 0) {
+      appState.students = res.students;
+    } else if (appState.roleLevel === "GVCN" && appState.students.length > 0 && !appState._autoSeededRosterOnce) {
+      appState._autoSeededRosterOnce = true;
+      callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+    }
+    if (Array.isArray(res.violations)) appState.violations = res.violations;
+    if (Array.isArray(res.campaigns) && res.campaigns.length > 0) appState.campaigns = res.campaigns;
+    if (Array.isArray(res.fundPayments)) appState.fundPayments = res.fundPayments;
+    if (Array.isArray(res.cashbook)) appState.cashbook = res.cashbook;
+    if (Array.isArray(res.auditLogs)) appState.auditLogs = res.auditLogs;
+    if (Array.isArray(res.letters)) appState.letters = res.letters;
+    if (Array.isArray(res.periodLogs)) appState.periodLogs = res.periodLogs;
+    if (res.attendanceRecords && typeof res.attendanceRecords === "object") appState.attendanceRecords = res.attendanceRecords;
+    if (res.dutyAssignments && typeof res.dutyAssignments === "object") appState.dutyAssignments = res.dutyAssignments;
+    if (Array.isArray(res.volunteerLaborList)) appState.volunteerLaborList = res.volunteerLaborList;
+    if (Array.isArray(res.vtmEvents)) appState.vtmEvents = res.vtmEvents;
+    if (Array.isArray(res.classMedia)) appState.classMedia = res.classMedia;
+    if (res.weeklyArchives && typeof res.weeklyArchives === "object") appState.weeklyArchives = res.weeklyArchives;
 
+    if (res.rolloverInfo && res.rolloverInfo.rolledOver) {
+      const cw = Number(res.rolloverInfo.currentWeek) || getAutoSchoolWeek();
+      localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(cw));
+      appState.lastAutoRolloverWeek = cw;
+      appState.selectedWeek = cw;
+      if (res.rolloverInfo.rolledOverAt) appState.lastAutoRolloverAt = String(res.rolloverInfo.rolledOverAt);
+    }
+
+    if (res.config && typeof res.config === "object") {
+      if (res.config.allowStudentLeaderEdit !== undefined) {
+        appState.allowStudentLeaderEdit = (res.config.allowStudentLeaderEdit === true || String(res.config.allowStudentLeaderEdit).toLowerCase() === "true");
+      }
+      if (res.config.customTicker !== undefined) appState.customTicker = String(res.config.customTicker || "");
+      if (res.config.tkbCustomImage) appState.tkbCustomImage = String(res.config.tkbCustomImage);
+      if (res.config.tkbUpdatedAt) appState.tkbUpdatedAt = String(res.config.tkbUpdatedAt);
+      if (res.config.tkbConfigJson) {
+        const parsedTkb = safeJsonParse(res.config.tkbConfigJson, null);
+        if (parsedTkb) appState.tkbConfig = normalizeTkbConfig(parsedTkb);
+      } else if (res.config.tkbVersionLabel || res.config.tkbEffectiveDate) {
+        const curTkb = getActiveTkbConfig();
+        if (res.config.tkbVersionLabel) curTkb.versionLabel = String(res.config.tkbVersionLabel);
+        if (res.config.tkbEffectiveDate) curTkb.effectiveDate = String(res.config.tkbEffectiveDate);
+      }
+      if (res.config.lastAutoRolloverAt) appState.lastAutoRolloverAt = String(res.config.lastAutoRolloverAt);
+      if (res.config.lastAutoRolloverWeek) {
+        const lw = parseInt(res.config.lastAutoRolloverWeek, 10);
+        if (lw > 0) {
+          appState.lastAutoRolloverWeek = lw;
+          localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(lw));
+        }
+      }
+      if (res.config.mondayRolloverTriggerActive !== undefined) {
+        appState.mondayRolloverTriggerActive = (res.config.mondayRolloverTriggerActive === true || String(res.config.mondayRolloverTriggerActive).toUpperCase() === "TRUE");
+      }
+      if (Array.isArray(res.config.criteriaList) && res.config.criteriaList.length > 0) {
+        appState.criteriaList = res.config.criteriaList;
+      }
+    }
+
+    if (Array.isArray(res.seatingRows) && res.seatingRows.length > 0 && typeof applyCloudSeatingRows === "function") {
+      applyCloudSeatingRows(res.seatingRows);
+    }
+
+    if (typeof recalculateFundSummary === "function") recalculateFundSummary();
+    buildAutoWeekDropdown();
+    applyRolePermissions();
     saveStateToLocal();
     renderAllSections();
   }
+  return res;
 }
 
 async function refreshData() {
@@ -896,18 +1490,27 @@ function renderAllSections() {
   if (typeof renderStudentCards === "function") renderStudentCards(appState.students);
   if (typeof renderSettingsTab === "function") renderSettingsTab();
   updateCelebrationTicker();
-  if (appState.roleLevel === "STUDENT" && typeof renderStudentPortal === "function") renderStudentPortal();
+  updateWeeklyRolloverUI();
+  if (appState.currentUser && appState.currentUser.studentId && typeof renderStudentPortal === "function") renderStudentPortal();
 }
 
 // Khởi chạy hệ thống khi nạp trang
 document.addEventListener("DOMContentLoaded", () => {
   initAuthSession();
+  checkAndPerformClientMondayRollover({ skipCloudSync: true });
   buildAutoWeekDropdown();
   syncAttendanceSessionOnLoad();
   renderAllSections();
   updateCelebrationTicker();
   updateLiveDashboardEngine();
-  setInterval(updateCelebrationTicker, 60000);
+  updateWeeklyRolloverUI();
+  setInterval(() => {
+    checkAndPerformClientMondayRollover();
+    updateCelebrationTicker();
+    updateWeeklyRolloverUI();
+  }, 60000);
   setInterval(updateLiveDashboardEngine, 1000);
-  syncWithCloud();
+  if (appState.currentUser && appState.authToken) {
+    syncWithCloud();
+  }
 });

@@ -10,18 +10,20 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   
   <meta name="theme-color" content="#0f172a">
-  <link rel="apple-touch-icon" href="app_icon_10a12.png">
+  <link rel="manifest" href="manifest-hs.json">
+  <link rel="apple-touch-icon" href="app_icon_10a12_192.png">
 
   <style>
     body { 
-      background-color: #e2e8f0; /* Nền Slate 200 chống lóa, tương phản cao */
+      background: linear-gradient(135deg, #e0f2fe 0%, #ede9fe 50%, #ecfdf5 100%);
+      background-attachment: fixed;
       color: #0f172a; 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
     }
     .app-card { 
-      background-color: #ffffff; 
-      border: 1px solid #cbd5e1; 
-      box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.05); 
+      background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.95) 100%);
+      border: 1px solid #c7d2fe; 
+      box-shadow: 0 6px 18px -4px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(59, 130, 246, 0.06);
     }
     input, select { font-size: 15px !important; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -34,7 +36,7 @@
   <header class="bg-[#0f172a] border-b border-slate-800 sticky top-0 z-30 shadow-md text-white">
     <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <img src="app_icon_10a12.png" onerror="this.src='https://ui-avatars.com/api/?name=10A12&background=0284c7&color=fff&size=64'" alt="Logo 10A12" class="w-10 h-10 rounded-xl shadow-xs border border-white/20 object-cover">
+        <img src="app_icon_10a12_192.png" onerror="this.src='app_icon_10a12.png'" alt="Logo 10A12" class="w-10 h-10 rounded-xl shadow-xs border border-white/20 object-cover">
         <div>
           <div class="flex items-center gap-2">
             <h1 class="text-sm sm:text-base font-black text-white">Cổng Tra Cứu 10A12</h1>
@@ -101,15 +103,15 @@
 
         <!-- 3 KHỐI THÔNG TIN: CHỖ NGỒI, TRỰC NHẬT, QUỸ LỚP -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
+          <div class="p-4 rounded-2xl bg-gradient-to-br from-sky-50 to-blue-100/60 border border-sky-200 space-y-1.5">
             <span class="font-black text-sky-800 uppercase flex items-center gap-1.5 text-[11px]">
               <i class="fa-solid fa-chair"></i> Vị trí chỗ ngồi của con
             </span>
             <p class="text-sm font-black text-slate-900" id="resStudentSeat">Đang tải vị trí...</p>
-            <p class="text-[10px] text-slate-500 italic">* Phòng học 4 dãy chuẩn, bảng ở dưới cùng</p>
+            <p class="text-[10px] text-sky-700 italic">* Phòng học 4 dãy chuẩn, bảng ở dưới cùng (Dãy ≠ Tổ)</p>
           </div>
 
-          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
+          <div class="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-100/60 border border-amber-200 space-y-1.5">
             <span class="font-black text-amber-800 uppercase flex items-center gap-1.5 text-[11px]">
               <i class="fa-solid fa-broom"></i> Phân công trực nhật 7 ca
             </span>
@@ -119,12 +121,12 @@
             </p>
           </div>
 
-          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
+          <div class="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-100/60 border border-emerald-200 space-y-1.5">
             <span class="font-black text-emerald-800 uppercase flex items-center gap-1.5 text-[11px]">
               <i class="fa-solid fa-vault"></i> Tình trạng quỹ lớp
             </span>
             <p class="text-sm font-black text-slate-900" id="resStudentFundStatus">Đã nộp đủ (100.000đ)</p>
-            <p class="text-[10px] text-slate-600 font-medium" id="resStudentFundDetail">Quỹ Học Kỳ 1 (2026 - 2027)</p>
+            <p class="text-[10px] text-emerald-800 font-medium" id="resStudentFundDetail">Quỹ Học Kỳ 1 (2026 - 2027)</p>
           </div>
         </div>
       </div>
@@ -138,19 +140,20 @@
         <div class="space-y-2 text-xs" id="resStudentViolationsList"></div>
       </div>
 
-      <!-- THỜI KHÓA BIỂU SỐ 3 -->
+      <!-- THỜI KHÓA BIỂU LỚP 10A12 -->
       <div class="app-card rounded-3xl p-5 space-y-3">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
           <h4 class="text-xs font-black uppercase text-slate-900 flex items-center gap-2">
             <i class="fa-solid fa-calendar-days text-indigo-700"></i>
-            Thời Khóa Biểu Số 3 Của Lớp (Áp dụng từ 02/11/2026)
+            <span id="resTkbHeading">Thời Khóa Biểu Lớp 10A12</span>
           </h4>
-          <a href="tkb_10a12.png" download="TKB_10A12_So3.png" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs transition flex items-center gap-1 border border-slate-300">
+          <a id="resTkbDownloadBtn" href="tkb_10a12.png" download="TKB_10A12.png" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-black text-xs transition flex items-center gap-1 shadow-xs">
             <i class="fa-solid fa-download"></i> Tải ảnh TKB
           </a>
         </div>
-        <div class="p-3 rounded-2xl bg-slate-50 border border-slate-300 text-center">
-          <img id="resTkbImg" src="tkb_10a12.png" alt="TKB 10A12" class="max-w-full sm:max-w-md mx-auto rounded-xl shadow-xs border border-slate-300">
+        <div class="p-3 rounded-2xl bg-gradient-to-br from-sky-50/70 to-indigo-50/70 border border-indigo-200 text-center space-y-2">
+          <img id="resTkbImg" src="tkb_10a12.png" alt="TKB 10A12" onerror="handleTkbImgError(this)" class="max-w-full sm:max-w-xl mx-auto rounded-xl shadow-xs border border-slate-300">
+          <div id="resTkbFallbackTable" class="hidden overflow-x-auto text-left"></div>
         </div>
       </div>
 
@@ -230,12 +233,59 @@
     </div>
   </div>
 
-  <!-- ==================== SCRIPT XỬ LÝ TRA CỨU & LOCAL ENGINE ==================== -->
+  <!-- ==================== SCRIPT XỬ LÝ TRA CỨU CLOUD & LOCAL FALLBACK ==================== -->
   <script>
     const GAS_API_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1lTYoi_wIdFpd_jneRKW8TtzUDyrtKGdkfk6K0OGErPfyKsjlB9hfQ/exec";
 
+    const TKB_FALLBACK_DATA = {
+      morning: [
+        ["T1 (07:00 - 07:45)", "TN&HN 1 (Mẫn)", "LÍ (Âu)", "CN (Đĩnh)", "—", "—", "—"],
+        ["T2 (07:50 - 08:35)", "TN&HN 2 (Mẫn)", "CĐ Toán (Mẫn)", "ĐỊA (P.Quốc)", "—", "—", "—"],
+        ["T3 (08:55 - 09:40)", "GDTC (Thành)", "TOÁN (Mẫn)", "QP&AN (Vân)", "—", "—", "—"],
+        ["T4 (09:45 - 10:30)", "T.ANH (Trúc)", "GDTC (Thành)", "CĐ Văn (Nhân)", "—", "—", "—"],
+        ["T5 (10:35 - 11:20)", "—", "—", "CĐ Hóa (Trang)", "—", "—", "—"]
+      ],
+      afternoon: [
+        ["C1 (14:00 - 14:45)", "CĐ Văn (Nhân)", "VĂN (Hân)", "—", "—", "—", "—"],
+        ["C2 (14:50 - 15:35)", "TN&HN 3 (Đài)", "CN (Đĩnh)", "—", "—", "—", "—"],
+        ["C3 (15:55 - 16:40)", "HÓA (Trang)", "T.ANH (Trúc)", "—", "—", "—", "—"]
+      ]
+    };
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function safeImageSrc(src) {
+      const s = String(src || "").trim();
+      if (!s) return "";
+      if (/^(data:image\/(png|jpeg|jpg|webp|gif);base64,|https?:\/\/|tkb_10a12\.png|\.?\/)/i.test(s)) return s;
+      return "";
+    }
+
+    function parseScore(val, fallback = 100) {
+      if (val === null || val === undefined || val === "") return fallback;
+      const num = Number(val);
+      return Number.isFinite(num) ? num : fallback;
+    }
+
+    function maskCCCD(cccd) {
+      const raw = String(cccd || "").replace(/\s/g, "");
+      if (!raw) return "Đang cập nhật";
+      if (raw.length <= 6) return "***" + raw.slice(-2);
+      return raw.slice(0, 4) + "****" + raw.slice(-2);
+    }
+
     function removeVietnameseTones(str) {
       if (!str) return "";
+      str = String(str);
+      if (typeof str.normalize === "function") str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       str = str.toLowerCase();
       str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
       str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
@@ -248,83 +298,174 @@
       return str.trim();
     }
 
-    // Tải dữ liệu từ LocalStorage
-    let localStudents = JSON.parse(localStorage.getItem("10A12_STUDENTS_V9")) || [];
-    let localViolations = JSON.parse(localStorage.getItem("10A12_VIOLATIONS_V9")) || [];
-    let localCampaigns = JSON.parse(localStorage.getItem("10A12_CAMPAIGNS_V9")) || [];
-    let localPayments = JSON.parse(localStorage.getItem("10A12_PAYMENTS_V9")) || [];
-    let localCashbook = JSON.parse(localStorage.getItem("10A12_CASHBOOK_V9")) || [];
-    let localSeating = JSON.parse(localStorage.getItem("classroom_10A12_glass_v9")) || [];
-    let localDuty = JSON.parse(localStorage.getItem("10A12_DUTY_7SESSIONS")) || {};
-    let localMedia = JSON.parse(localStorage.getItem("10A12_CLASS_MEDIA")) || [];
-    let customTkbImg = localStorage.getItem("10A12_TKB_IMAGE") || "tkb_10a12.png";
+    function safeReadLocal(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (err) {
+        return fallback;
+      }
+    }
 
-    // Xử lý Tra cứu học sinh
-    function handleLookupStudent(e) {
-      if (e && e.preventDefault) e.preventDefault();
-      const rawQuery = document.getElementById("lookupInput").value.trim();
+    function applyTracuuTkbHeading(tkbCfg) {
+      const headEl = document.getElementById("resTkbHeading");
+      if (!headEl) return;
+      if (tkbCfg && tkbCfg.versionLabel) {
+        const dt = tkbCfg.effectiveDate ? ` (Từ ${tkbCfg.effectiveDate})` : "";
+        headEl.innerText = `Thời Khóa Biểu ${tkbCfg.versionLabel}${dt} - Lớp 10A12`;
+      } else {
+        headEl.innerText = "Thời Khóa Biểu Lớp 10A12";
+      }
+    }
+
+    function handleTkbImgError(imgEl) {
+      if (imgEl) imgEl.classList.add("hidden");
+      const wrap = document.getElementById("resTkbFallbackTable");
+      if (!wrap) return;
+      wrap.classList.remove("hidden");
+      const cfg = safeReadLocal("10A12_TKB_CONFIG", null);
+      const hasCfg = cfg && Array.isArray(cfg.morning) && Array.isArray(cfg.afternoon);
+      const morningRows = hasCfg
+        ? cfg.morning.map(r => [`T${r.period} (${r.time})`, r.t2, r.t3, r.t4, r.t5, r.t6, r.t7])
+        : TKB_FALLBACK_DATA.morning;
+      const afternoonRows = hasCfg
+        ? cfg.afternoon.map(r => [`C${r.period} (${r.time})`, r.t2, r.t3, r.t4, r.t5, r.t6, r.t7])
+        : TKB_FALLBACK_DATA.afternoon;
+      const vText = (cfg && cfg.versionLabel) ? cfg.versionLabel : "Hiện Hành";
+      const renderRows = (rows, badge) => rows.map(r => `
+        <tr class="border-b border-slate-200">
+          <td class="px-2 py-1.5 font-bold text-slate-800 whitespace-nowrap">${escapeHtml(badge)} • ${escapeHtml(r[0])}</td>
+          ${r.slice(1).map(c => `<td class="px-2 py-1.5 text-center ${c === '—' || c === '-' ? 'text-slate-400' : 'font-bold text-slate-900'}">${escapeHtml(c)}</td>`).join("")}
+        </tr>
+      `).join("");
+      wrap.innerHTML = `
+        <p class="text-[11px] font-bold text-amber-800 mb-2">Hiển thị bảng Thời Khóa Biểu ${escapeHtml(vText)} (Tự động):</p>
+        <table class="w-full text-[11px] bg-white rounded-xl border border-slate-300 border-collapse">
+          <thead class="bg-slate-800 text-white">
+            <tr>
+              <th class="px-2 py-1.5 text-left">Buổi / Tiết</th>
+              <th class="px-2 py-1.5">T2</th><th class="px-2 py-1.5">T3</th><th class="px-2 py-1.5">T4</th>
+              <th class="px-2 py-1.5">T5</th><th class="px-2 py-1.5">T6</th><th class="px-2 py-1.5">T7</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${renderRows(morningRows, "Sáng")}
+            ${renderRows(afternoonRows, "Chiều")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function buildLocalLookupResponse(rawQuery) {
+      const localStudents = safeReadLocal("10A12_STUDENTS_V9", []);
+      if (!localStudents.length) return null;
+
+      const lowerQuery = rawQuery.trim().toLowerCase();
       const cleanQuery = removeVietnameseTones(rawQuery);
-      const alertBox = document.getElementById("lookupAlertMsg");
-      const resultSec = document.getElementById("lookupResultSection");
-      const welcomeCard = document.getElementById("defaultWelcomeCard");
+      if (!cleanQuery) return null;
 
-      if (alertBox) alertBox.classList.add("hidden");
-      if (!cleanQuery) return;
-
-      // Tìm kiếm theo: Tên không dấu, Tên có dấu, Mã HS, Số CCCD
       const matched = localStudents.find(s => {
         const sCleanName = removeVietnameseTones(s.hoTen);
-        const sCode = (s.id || "").toLowerCase();
-        const sCCCD = (s.soCCCD || "").replace(/\s/g, "");
-        return sCleanName === cleanQuery || sCode === cleanQuery || sCCCD === cleanQuery || sCleanName.includes(cleanQuery);
+        const sRawName = String(s.hoTen || "").trim().toLowerCase();
+        const sCode = String(s.id || "").trim().toLowerCase();
+        const sCCCD = String(s.soCCCD || "").replace(/\s/g, "").toLowerCase();
+        return sCode === lowerQuery || (sCCCD && sCCCD === lowerQuery) || sRawName === lowerQuery || sCleanName === cleanQuery;
       });
+      if (!matched) return { status: "error", message: `Không tìm thấy hồ sơ khớp chính xác với "${rawQuery}".` };
 
-      if (!matched) {
-        if (alertBox) {
-          alertBox.innerText = `Không tìm thấy thông tin học sinh khớp với "${rawQuery}". Vui lòng kiểm tra lại họ tên, mã HS hoặc số CCCD!`;
-          alertBox.classList.remove("hidden");
+      const localViolations = safeReadLocal("10A12_VIOLATIONS_V9", []);
+      const localCampaigns = safeReadLocal("10A12_CAMPAIGNS_V9", []);
+      const localPayments = safeReadLocal("10A12_PAYMENTS_V9", []);
+      const localSeating = safeReadLocal("classroom_10A12_glass_v9", []);
+      const localDuty = safeReadLocal("10A12_DUTY_7SESSIONS", {});
+      const localMedia = safeReadLocal("10A12_CLASS_MEDIA", []);
+      const customTkbImg = localStorage.getItem("10A12_TKB_IMAGE") || "tkb_10a12.png";
+
+      let seatLocation = "Đang sắp xếp chỗ ngồi";
+      const matchedNameNorm = removeVietnameseTones(matched.hoTen);
+      for (let r = 0; r < localSeating.length; r++) {
+        const row = localSeating[r] || [];
+        for (let c = 0; c < row.length; c++) {
+          const cell = row[c];
+          if (!cell) continue;
+          const byId = cell.studentId && String(cell.studentId).toLowerCase() === String(matched.id).toLowerCase();
+          const byExactName = cell.name && removeVietnameseTones(cell.name) === matchedNameNorm;
+          if (byId || byExactName) {
+            const dayNum = Math.floor(c / 2) + 1;
+            const banNum = 6 - r;
+            const side = (c % 2 === 0) ? "Ghế Trái" : "Ghế Phải";
+            seatLocation = `Dãy ${dayNum} • Bàn ${banNum} • ${side}`;
+            break;
+          }
         }
-        if (resultSec) resultSec.classList.add("hidden");
-        if (welcomeCard) welcomeCard.classList.remove("hidden");
-        return;
       }
 
-      // Hiển thị kết quả tra cứu
+      let dutyInfo = null;
+      for (const sKey in localDuty) {
+        const dObj = localDuty[sKey];
+        if (dObj && Array.isArray(dObj.students) && dObj.students.includes(matched.id)) {
+          dutyInfo = { sessionKey: sKey, status: dObj.status || "CHUA_DANH_GIA", note: dObj.note || "" };
+          break;
+        }
+      }
+
+      const camps = localCampaigns.length ? localCampaigns : [{ id: "KY1_100K", title: "Quỹ Lớp Học Kỳ 1", target: 100000 }];
+      const personalFunds = camps.map(c => {
+        const payRec = localPayments.find(p => p.studentId === matched.id && p.campaignId === c.id);
+        return {
+          campaignId: c.id,
+          campaignTitle: c.title,
+          targetAmount: parseScore(c.target, 0),
+          amountPaid: payRec ? parseScore(payRec.amountPaid, 0) : 0,
+          isPaid: Boolean(payRec && payRec.isPaid),
+          paidDate: payRec && payRec.paidDate ? payRec.paidDate : ""
+        };
+      });
+
+      return {
+        status: "success",
+        source: "offline",
+        student: {
+          id: matched.id,
+          hoTen: matched.hoTen,
+          to: matched.to || "Tổ 1",
+          chucVu: matched.chucVu || "Thành viên",
+          soCCCDMasked: matched.soCCCDMasked || maskCCCD(matched.soCCCD),
+          ngayCapCCCD: matched.ngayCapCCCD || "",
+          diemThiDua: parseScore(matched.diemThiDua, 100)
+        },
+        seatLocation,
+        dutyInfo,
+        personalViolations: localViolations.filter(v => v.studentId === matched.id),
+        personalFunds,
+        tkbImage: customTkbImg,
+        classMedia: localMedia.slice(0, 4)
+      };
+    }
+
+    function renderLookupPayload(payload) {
+      const resultSec = document.getElementById("lookupResultSection");
+      const welcomeCard = document.getElementById("defaultWelcomeCard");
       if (welcomeCard) welcomeCard.classList.add("hidden");
       if (resultSec) resultSec.classList.remove("hidden");
 
-      document.getElementById("resStudentName").innerText = matched.hoTen;
-      document.getElementById("resStudentTeam").innerText = matched.to || "Tổ 1";
-      
-      const cccdText = matched.soCCCD ? `${matched.soCCCD}${matched.ngayCapCCCD ? ' (Cấp: ' + matched.ngayCapCCCD + ')' : ''}` : "Đang cập nhật";
-      document.getElementById("resStudentMeta").innerText = `Mã HS: ${matched.id} • Chức vụ: ${matched.chucVu || "Thành viên"} • CCCD: ${cccdText}`;
+      const st = payload.student || {};
+      document.getElementById("resStudentName").innerText = st.hoTen || "";
+      document.getElementById("resStudentTeam").innerText = st.to || "Tổ 1";
 
-      const score = Number(matched.diemThiDua) || 100;
+      const cccdMasked = st.soCCCDMasked || "Đang cập nhật";
+      const cccdText = st.ngayCapCCCD ? `${cccdMasked} (Cấp: ${st.ngayCapCCCD})` : cccdMasked;
+      document.getElementById("resStudentMeta").innerText = `Mã HS: ${st.id || ""} • Chức vụ: ${st.chucVu || "Thành viên"} • CCCD: ${cccdText}`;
+
+      const score = parseScore(st.diemThiDua, 100);
       const scoreEl = document.getElementById("resStudentScore");
       scoreEl.innerText = `${score}đ`;
       scoreEl.className = `text-3xl font-black ${score >= 90 ? 'text-emerald-700' : (score >= 70 ? 'text-sky-700' : 'text-amber-700')}`;
-      
-      const rankEl = document.getElementById("resStudentRank");
+
       const rankText = score >= 90 ? "Tốt" : (score >= 70 ? "Khá" : (score >= 50 ? "Đạt" : "Chưa đạt"));
-      rankEl.innerText = `Xếp loại: ${rankText} (Thông tư 22)`;
+      document.getElementById("resStudentRank").innerText = `Xếp loại: ${rankText} (Thông tư 22)`;
+      document.getElementById("resStudentSeat").innerText = payload.seatLocation || "Đang sắp xếp chỗ ngồi";
 
-      // Vị trí chỗ ngồi (Bảo mật: Chỉ phụ huynh biết vị trí con)
-      let seatLocation = "Đang sắp xếp chỗ ngồi";
-      if (localSeating && localSeating.length > 0) {
-        localSeating.forEach((row, r) => {
-          row.forEach((cell, c) => {
-            if (cell && cell.name && matched.hoTen.includes(cell.name)) {
-              const dayNum = Math.floor(c / 2) + 1;
-              const banNum = 6 - r;
-              const side = (c % 2 === 0) ? "Ghế Trái" : "Ghế Phải";
-              seatLocation = `Dãy ${dayNum} • Bàn ${banNum} • ${side}`;
-            }
-          });
-        });
-      }
-      document.getElementById("resStudentSeat").innerText = seatLocation;
-
-      // Phân công trực nhật 7 ca
       const sessionNames = {
         "T2_SANG": "Sáng Thứ 2", "T2_CHIEU": "Chiều Thứ 2",
         "T3_SANG": "Sáng Thứ 3", "T3_CHIEU": "Chiều Thứ 3",
@@ -333,124 +474,259 @@
       let dutyAssignedSession = "Chưa có ca trực tuần này";
       let dutyStatusText = "Chưa diễn ra";
       let dutyStatusClass = "text-slate-600";
-
-      for (let sKey in localDuty) {
-        const dutyObj = localDuty[sKey];
-        if (dutyObj && dutyObj.students && dutyObj.students.includes(matched.id)) {
-          dutyAssignedSession = sessionNames[sKey] || sKey;
-          if (dutyObj.status === "DAT") {
-            dutyStatusText = "Đã hoàn thành xuất sắc";
-            dutyStatusClass = "text-emerald-700";
-          } else if (dutyObj.status === "CHUA_DAT") {
-            dutyStatusText = "Cần hoàn thành ca trực bù";
-            dutyStatusClass = "text-rose-700";
-          }
-          break;
+      if (payload.dutyInfo && payload.dutyInfo.sessionKey) {
+        dutyAssignedSession = sessionNames[payload.dutyInfo.sessionKey] || payload.dutyInfo.sessionKey;
+        if (payload.dutyInfo.status === "DAT") {
+          dutyStatusText = "Đã hoàn thành xuất sắc";
+          dutyStatusClass = "text-emerald-700";
+        } else if (payload.dutyInfo.status === "CHUA_DAT") {
+          dutyStatusText = "Cần hoàn thành ca trực bù";
+          dutyStatusClass = "text-rose-700";
         }
       }
       document.getElementById("resStudentDutySession").innerText = dutyAssignedSession;
       const dutyStatusEl = document.getElementById("resStudentDutyStatus");
       dutyStatusEl.className = `text-[10px] font-bold ${dutyStatusClass}`;
-      dutyStatusEl.innerHTML = `<i class="fa-solid fa-circle-info mr-1"></i>${dutyStatusText}`;
+      dutyStatusEl.innerHTML = `<i class="fa-solid fa-circle-info mr-1"></i>${escapeHtml(dutyStatusText)}`;
 
-      // Quỹ lớp
-      const curCampaign = localCampaigns[0] || { id: "KY1_100K", title: "Quỹ Lớp Học Kỳ 1", target: 100000 };
-      const payRecord = localPayments.find(p => p.studentId === matched.id && p.campaignId === curCampaign.id);
-      const isPaid = payRecord ? payRecord.isPaid : false;
-
+      const funds = Array.isArray(payload.personalFunds) ? payload.personalFunds : [];
       const fundStatusEl = document.getElementById("resStudentFundStatus");
-      if (isPaid) {
-        fundStatusEl.innerHTML = `<span class="text-emerald-700 font-bold"><i class="fa-solid fa-check mr-1"></i>Đã đóng đủ (${Number(curCampaign.target).toLocaleString()}đ)</span>`;
+      const fundDetailEl = document.getElementById("resStudentFundDetail");
+      if (funds.length === 0) {
+        fundStatusEl.innerHTML = `<span class="text-slate-600 font-bold">Chưa có đợt thu</span>`;
+        fundDetailEl.innerText = "Lớp chưa phát hành đợt thu mới";
       } else {
-        fundStatusEl.innerHTML = `<span class="text-rose-700 font-bold"><i class="fa-solid fa-clock mr-1"></i>Chưa hoàn thành (${Number(curCampaign.target).toLocaleString()}đ)</span>`;
+        const unpaidCount = funds.filter(f => !f.isPaid).length;
+        const totalPaid = funds.reduce((sum, f) => sum + parseScore(f.amountPaid, 0), 0);
+        if (unpaidCount === 0) {
+          fundStatusEl.innerHTML = `<span class="text-emerald-700 font-bold"><i class="fa-solid fa-check mr-1"></i>Hoàn thành ${funds.length}/${funds.length} đợt (${totalPaid.toLocaleString()}đ)</span>`;
+        } else {
+          fundStatusEl.innerHTML = `<span class="text-rose-700 font-bold"><i class="fa-solid fa-clock mr-1"></i>Còn ${unpaidCount}/${funds.length} đợt chưa xong</span>`;
+        }
+        fundDetailEl.innerHTML = funds.map(f => {
+          const targetAmt = parseScore(f.targetAmount, 0).toLocaleString();
+          const paidAmt = parseScore(f.amountPaid, 0).toLocaleString();
+          const badge = f.isPaid
+            ? `<span class="text-emerald-700 font-bold">Đã nộp (${paidAmt}đ/${targetAmt}đ)</span>`
+            : `<span class="text-rose-700 font-bold">Chưa đủ (${paidAmt}đ/${targetAmt}đ)</span>`;
+          return `<div class="mt-1 flex items-center justify-between gap-2 text-[10px]"><span>• ${escapeHtml(f.campaignTitle)}</span>${badge}</div>`;
+        }).join("");
       }
-      document.getElementById("resStudentFundDetail").innerText = curCampaign.title;
 
-      // Lỗi / Việc tốt rèn luyện
-      const personalViolations = localViolations.filter(v => v.studentId === matched.id);
+      const personalViolations = Array.isArray(payload.personalViolations) ? payload.personalViolations : [];
       const vioListEl = document.getElementById("resStudentViolationsList");
       if (personalViolations.length === 0) {
         vioListEl.innerHTML = `<p class="p-3 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold"><i class="fa-solid fa-circle-check mr-1.5 text-emerald-700"></i>Học sinh thực hiện nề nếp rất tốt, không có lỗi vi phạm trong tuần.</p>`;
       } else {
-        vioListEl.innerHTML = personalViolations.map(v => `
-          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-300 flex items-center justify-between">
-            <div>
-              <b class="text-slate-900">${v.criteria}</b>
-              <span class="text-[10px] text-slate-500 font-medium block">${v.time} • ${v.note || ''}</span>
+        vioListEl.innerHTML = personalViolations.map(v => {
+          const pts = parseScore(v.points, 0);
+          return `
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-300 flex items-center justify-between">
+              <div>
+                <b class="text-slate-900">${escapeHtml(v.criteria)}</b>
+                <span class="text-[10px] text-slate-500 font-medium block">${escapeHtml(v.time)} ${v.note ? '• ' + escapeHtml(v.note) : ''}</span>
+              </div>
+              <span class="font-black text-xs ${pts < 0 ? 'text-rose-700' : 'text-emerald-700'}">${pts > 0 ? '+' : ''}${pts}đ</span>
             </div>
-            <span class="font-black text-xs ${v.points < 0 ? 'text-rose-700' : 'text-emerald-700'}">${v.points > 0 ? '+' : ''}${v.points}đ</span>
-          </div>
-        `).join("");
+          `;
+        }).join("");
       }
 
-      // TKB & Media
+      if (payload.tkbConfig && typeof payload.tkbConfig === "object") {
+        try { localStorage.setItem("10A12_TKB_CONFIG", JSON.stringify(payload.tkbConfig)); } catch (e) {}
+      }
+      applyTracuuTkbHeading(payload.tkbConfig || safeReadLocal("10A12_TKB_CONFIG", null));
+
       const tkbImgEl = document.getElementById("resTkbImg");
-      if (tkbImgEl) tkbImgEl.src = customTkbImg;
+      const tkbDownloadBtn = document.getElementById("resTkbDownloadBtn");
+      const tkbFallbackEl = document.getElementById("resTkbFallbackTable");
+      if (tkbFallbackEl) tkbFallbackEl.classList.add("hidden");
+      const candidateTkb = safeImageSrc(payload.tkbImage) || safeImageSrc(localStorage.getItem("10A12_TKB_IMAGE")) || "tkb_10a12.png";
+      if (tkbImgEl) {
+        tkbImgEl.classList.remove("hidden");
+        tkbImgEl.src = candidateTkb;
+      }
+      if (tkbDownloadBtn) tkbDownloadBtn.href = candidateTkb;
 
       const mediaGridEl = document.getElementById("resClassMediaGrid");
+      const classMedia = Array.isArray(payload.classMedia) ? payload.classMedia : [];
       if (mediaGridEl) {
-        if (localMedia.length === 0) {
+        if (classMedia.length === 0) {
           mediaGridEl.innerHTML = `<p class="col-span-full text-slate-400 italic py-3 text-center">Chưa có hình ảnh hoạt động của lớp.</p>`;
         } else {
-          mediaGridEl.innerHTML = localMedia.slice(0, 4).map(m => `
-            <div class="rounded-xl border border-slate-300 overflow-hidden bg-white shadow-2xs">
-              <img src="${m.imgData}" alt="${m.title}" class="w-full h-24 object-cover">
-              <p class="p-1.5 text-[10px] font-bold text-slate-900 truncate">${m.title}</p>
-            </div>
-          `).join("");
+          mediaGridEl.innerHTML = classMedia.slice(0, 4).map(m => {
+            const imgUrl = safeImageSrc(m.imgData);
+            return `
+              <div class="rounded-xl border border-slate-300 overflow-hidden bg-white shadow-2xs">
+                ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(m.title)}" class="w-full h-24 object-cover">` : `<div class="w-full h-24 bg-slate-100 flex items-center justify-center text-slate-400 text-xs">Không có ảnh</div>`}
+                <p class="p-1.5 text-[10px] font-bold text-slate-900 truncate">${escapeHtml(m.title)}</p>
+              </div>
+            `;
+          }).join("");
         }
       }
 
       resultSec.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // Modal Sao Kê Quỹ Lớp Minh Bạch
-    function openStatementModal() {
-      let income = 0;
-      localPayments.forEach(p => {
-        if (p.isPaid) income += Number(p.amountPaid || 100000);
-      });
+    async function handleLookupStudent(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      const rawQuery = document.getElementById("lookupInput").value.trim();
+      const cleanQuery = removeVietnameseTones(rawQuery);
+      const alertBox = document.getElementById("lookupAlertMsg");
+      const resultSec = document.getElementById("lookupResultSection");
+      const welcomeCard = document.getElementById("defaultWelcomeCard");
 
-      let expense = 0;
-      localCashbook.forEach(tx => {
-        if ((tx.status || "DA_DUYET") === "DA_DUYET" && tx.type === "CHI") {
-          expense += Number(tx.amount || 0);
+      if (!cleanQuery) return;
+      if (alertBox) {
+        alertBox.className = "p-3 rounded-xl bg-sky-50 border border-sky-300 text-sky-800 text-xs font-bold text-center";
+        alertBox.innerText = "Đang tra cứu dữ liệu mới nhất từ Sổ Chủ Nhiệm...";
+      }
+
+      let resPayload = null;
+      let networkFailed = false;
+      try {
+        const resp = await fetch(`${GAS_API_URL}?action=lookupStudent&code=${encodeURIComponent(rawQuery)}`, { method: "GET", redirect: "follow" });
+        const json = await resp.json();
+        if (json && json.status) resPayload = json;
+        else networkFailed = true;
+      } catch (err) {
+        networkFailed = true;
+      }
+
+      if (networkFailed) {
+        resPayload = buildLocalLookupResponse(rawQuery);
+      }
+
+      if (!resPayload || resPayload.status !== "success" || !resPayload.student) {
+        if (alertBox) {
+          alertBox.className = "p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-bold text-center";
+          alertBox.innerText = (resPayload && resPayload.message)
+            ? resPayload.message
+            : `Không tìm thấy thông tin học sinh khớp chính xác với "${rawQuery}". Vui lòng nhập đầy đủ Họ và tên, Mã HS (VD: HS01) hoặc CCCD 12 số!`;
         }
-      });
+        if (resultSec) resultSec.classList.add("hidden");
+        if (welcomeCard) welcomeCard.classList.remove("hidden");
+        return;
+      }
+
+      if (alertBox) {
+        if (resPayload.source === "offline") {
+          alertBox.className = "p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold text-center";
+          alertBox.innerText = "Đang xem từ bộ nhớ đệm trên thiết bị (ngoại tuyến).";
+        } else {
+          alertBox.classList.add("hidden");
+        }
+      }
+
+      renderLookupPayload(resPayload);
+    }
+
+    async function openStatementModal() {
+      const modal = document.getElementById("statementModal");
+      const listEl = document.getElementById("modalExpenseList");
+      if (modal) modal.classList.remove("hidden");
+      if (listEl) listEl.innerHTML = `<p class="text-sky-700 font-bold py-3 text-center">Đang đồng bộ sao kê quỹ lớp từ máy chủ...</p>`;
+
+      let statementData = null;
+      try {
+        const resp = await fetch(`${GAS_API_URL}?action=getPublicFundStatement`, { method: "GET", redirect: "follow" });
+        const json = await resp.json();
+        if (json && json.status === "success") {
+          statementData = json;
+        }
+      } catch (err) {
+        statementData = null;
+      }
+
+      if (!statementData) {
+        const localPayments = safeReadLocal("10A12_PAYMENTS_V9", []);
+        const localCashbook = safeReadLocal("10A12_CASHBOOK_V9", []);
+        let income = 0;
+        localPayments.forEach(p => {
+          if (p.isPaid) income += parseScore(p.amountPaid, 0);
+        });
+        let expense = 0;
+        const txs = [];
+        localCashbook.forEach(tx => {
+          if ((tx.status || "DA_DUYET") === "DA_DUYET") {
+            const amt = parseScore(tx.amount, 0);
+            if (String(tx.type).toUpperCase() === "CHI") expense += amt;
+            else income += amt;
+            txs.push(tx);
+          }
+        });
+        statementData = {
+          fundSummary: { totalIncome: income, totalExpense: expense, balance: income - expense },
+          transactions: txs
+        };
+      }
+
+      const summary = statementData.fundSummary || {};
+      const income = parseScore(summary.totalIncome, 0);
+      const expense = parseScore(summary.totalExpense, 0);
+      const balance = parseScore(summary.balance, income - expense);
 
       document.getElementById("modalFundIncome").innerText = `${income.toLocaleString()} đ`;
       document.getElementById("modalFundExpense").innerText = `${expense.toLocaleString()} đ`;
-      document.getElementById("modalFundBalance").innerText = `${(income - expense).toLocaleString()} đ`;
+      document.getElementById("modalFundBalance").innerText = `${balance.toLocaleString()} đ`;
 
-      const listEl = document.getElementById("modalExpenseList");
       if (listEl) {
-        const approvedExpenses = localCashbook.filter(t => (t.status || "DA_DUYET") === "DA_DUYET");
-        if (approvedExpenses.length === 0) {
-          listEl.innerHTML = `<p class="text-slate-400 italic py-3 text-center">Chưa phát sinh phiếu chi nào.</p>`;
+        const approvedTxs = Array.isArray(statementData.transactions) ? statementData.transactions : [];
+        if (approvedTxs.length === 0) {
+          listEl.innerHTML = `<p class="text-slate-400 italic py-3 text-center">Chưa phát sinh phiếu thu/chi nào.</p>`;
         } else {
-          listEl.innerHTML = approvedExpenses.map(tx => `
+          listEl.innerHTML = approvedTxs.map(tx => `
             <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-300 flex items-center justify-between">
               <div>
-                <b class="text-slate-900">${tx.category}</b>
-                <p class="text-[11px] text-slate-600 font-medium">${tx.note} <span class="text-slate-400">(${tx.time})</span></p>
+                <b class="text-slate-900">${escapeHtml(tx.category)}</b>
+                <p class="text-[11px] text-slate-600 font-medium">${escapeHtml(tx.note || "")} <span class="text-slate-400">(${escapeHtml(tx.time || "")})</span></p>
               </div>
               <b class="text-sm font-black ${tx.type === 'CHI' ? 'text-rose-700' : 'text-emerald-700'} font-mono">
-                ${tx.type === 'CHI' ? '-' : '+'}${Number(tx.amount || 0).toLocaleString()}đ
+                ${tx.type === 'CHI' ? '-' : '+'}${parseScore(tx.amount, 0).toLocaleString()}đ
               </b>
             </div>
           `).join("");
         }
       }
-
-      document.getElementById("statementModal").classList.remove("hidden");
     }
 
     function closeStatementModal() {
       document.getElementById("statementModal").classList.add("hidden");
     }
 
-    // Tự động nhận diện đường dẫn (VD: tracuu.html?id=HS01 hoặc tracuu.html?code=052206...)
+    async function refreshPublicTkbFromCloud() {
+      applyTracuuTkbHeading(safeReadLocal("10A12_TKB_CONFIG", null));
+      try {
+        const resp = await fetch(`${GAS_API_URL}?action=getPublicFundStatement`, { method: "GET", redirect: "follow" });
+        const json = await resp.json();
+        if (json && json.status === "success") {
+          if (json.tkbConfig && typeof json.tkbConfig === "object") {
+            try { localStorage.setItem("10A12_TKB_CONFIG", JSON.stringify(json.tkbConfig)); } catch (e) {}
+            applyTracuuTkbHeading(json.tkbConfig);
+          }
+          if (json.tkbImage) {
+            const validImg = safeImageSrc(json.tkbImage);
+            if (validImg) {
+              try { localStorage.setItem("10A12_TKB_IMAGE", validImg); } catch (e) {}
+              const tkbImgEl = document.getElementById("resTkbImg");
+              const tkbBtn = document.getElementById("resTkbDownloadBtn");
+              if (tkbImgEl) {
+                tkbImgEl.classList.remove("hidden");
+                tkbImgEl.src = validImg;
+              }
+              if (tkbBtn) tkbBtn.href = validImg;
+            }
+          }
+        }
+      } catch (err) {}
+    }
+
     window.addEventListener("DOMContentLoaded", () => {
+      if ("serviceWorker" in navigator && location.protocol !== "file:") {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      }
+      refreshPublicTkbFromCloud();
       const urlParams = new URLSearchParams(window.location.search);
       const codeParam = urlParams.get("code") || urlParams.get("id") || urlParams.get("name");
       if (codeParam) {

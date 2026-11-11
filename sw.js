@@ -1,11 +1,11 @@
 /**
  * ============================================================================
  * SERVICE WORKER ĐIỀU HÀNH PWA SỔ TAY CHỦ NHIỆM 10A12 (K58-QT)
- * Phiên bản: 10a12-pwa-v14 (Đồng bộ 5 module JS & Cache Busting)
+ * Phiên bản: 10a12-pwa-v17 (TKB Dynamic Sync, Docx Spacious Layout, Dãy 1..4 & Thu Ủng Hộ GVCN)
  * ============================================================================
  */
 
-const CACHE_NAME = "10a12-pwa-v14";
+const CACHE_NAME = "10a12-pwa-v17";
 
 const STATIC_ASSETS = [
   "./",
@@ -19,7 +19,12 @@ const STATIC_ASSETS = [
   "./manifest.json",
   "./manifest-hs.json",
   "./app_icon_gvcn.png",
+  "./app_icon_gvcn_192.png",
+  "./app_icon_gvcn_512.png",
   "./app_icon_10a12.png",
+  "./app_icon_10a12_192.png",
+  "./app_icon_10a12_512.png",
+  "./tkb_10a12.png",
   "https://cdn.tailwindcss.com",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css",
   "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
@@ -73,14 +78,14 @@ self.addEventListener("fetch", (event) => {
         return networkResponse;
       })
       .catch(() => {
-        return caches.match(request).then((cachedResponse) => {
+        return caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
           if (cachedResponse) return cachedResponse;
 
           if (request.mode === "navigate") {
             if (requestUrl.includes("tracuu.html")) {
-              return caches.match("./tracuu.html");
+              return caches.match("./tracuu.html", { ignoreSearch: true });
             }
-            return caches.match("./index.html");
+            return caches.match("./index.html", { ignoreSearch: true });
           }
         });
       })

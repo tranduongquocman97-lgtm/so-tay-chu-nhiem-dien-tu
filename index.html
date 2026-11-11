@@ -12,23 +12,24 @@
   
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
-  <link rel="apple-touch-icon" href="app_icon_10a12.png">
+  <link rel="apple-touch-icon" href="app_icon_gvcn_192.png">
 
   <style>
     body { 
-      background-color: #e2e8f0; /* Nền xám Slate 200 chống lóa mắt */
+      background: linear-gradient(135deg, #e0f2fe 0%, #ede9fe 48%, #ecfdf5 100%);
+      background-attachment: fixed;
       color: #0f172a; 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
     }
     .app-card { 
-      background-color: #ffffff; 
-      border: 1px solid #cbd5e1; 
-      box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.05); 
+      background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.95) 100%);
+      border: 1px solid #c7d2fe; 
+      box-shadow: 0 6px 18px -4px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(59, 130, 246, 0.06);
     }
     .nav-item-active { 
-      background: linear-gradient(135deg, #0284c7, #1d4ed8) !important; 
+      background: linear-gradient(135deg, #0284c7, #4f46e5) !important; 
       color: #ffffff !important; 
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35); 
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4); 
     }
     input, select, textarea { font-size: 15px !important; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -51,7 +52,8 @@
 
     @media print {
       aside, header, nav, #liveBannerSection, .no-print { display: none !important; }
-      body { background-color: #ffffff !important; color: #000000 !important; }
+      .tab-pane { display: none !important; }
+      body { background: #ffffff !important; background-color: #ffffff !important; color: #000000 !important; }
       #tab-bien-ban { display: block !important; }
       .app-card { box-shadow: none !important; border: none !important; }
     }
@@ -60,12 +62,13 @@
 <body class="min-h-screen flex flex-col lg:flex-row antialiased selection:bg-sky-500 selection:text-white">
 
   <!-- ==================== MÀN HÌNH ĐĂNG NHẬP ==================== -->
-  <div id="authScreen" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-white max-w-md w-full p-6 sm:p-8 rounded-3xl border border-slate-300 shadow-2xl space-y-5 text-center">
-      <img src="app_icon_10a12.png" onerror="this.src='https://ui-avatars.com/api/?name=10A12&background=0284c7&color=fff&size=128'" alt="Logo 10A12" class="w-16 h-16 rounded-2xl mx-auto shadow-md border border-slate-200 object-cover">
+  <div id="authScreen" class="fixed inset-0 z-50 bg-gradient-to-br from-slate-950/90 via-indigo-950/85 to-sky-950/90 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-white max-w-md w-full p-6 sm:p-8 rounded-3xl border-2 border-sky-200 shadow-2xl space-y-5 text-center relative overflow-hidden">
+      <div class="h-1.5 w-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-500 absolute top-0 left-0"></div>
+      <img src="app_icon_10a12.png" onerror="this.src='https://ui-avatars.com/api/?name=10A12&background=0284c7&color=fff&size=128'" alt="Logo 10A12" class="w-16 h-16 rounded-2xl mx-auto shadow-md border-2 border-sky-200 object-cover">
       <div>
-        <h2 class="text-xl sm:text-2xl font-black text-slate-900 tracking-wide uppercase">LỚP 10A12 (K58-QT)</h2>
-        <p class="text-xs font-bold text-slate-500 mt-1">Sổ Tay Chủ Nhiệm & Trung Tâm Điều Hành Điện Tử</p>
+        <h2 class="text-xl sm:text-2xl font-black bg-gradient-to-r from-sky-700 via-indigo-700 to-emerald-700 bg-clip-text text-transparent tracking-wide uppercase">LỚP 10A12 (K58-QT)</h2>
+        <p class="text-xs font-bold text-slate-600 mt-1">Sổ Tay Chủ Nhiệm & Trung Tâm Điều Hành Điện Tử</p>
       </div>
 
       <form onsubmit="handleUserLogin(event)" class="space-y-4 text-left">
@@ -136,7 +139,7 @@
 
       <button onclick="switchTab('tab-tkb')" id="btn-side-tab-tkb" class="side-nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-slate-800/90 transition text-left">
         <i class="fa-solid fa-calendar-days w-4 text-center text-sm text-indigo-400"></i>
-        <span>Thời khóa biểu</span>
+        <span id="navTkbSideLabel">Thời khóa biểu</span>
       </button>
 
       <div class="text-[10px] uppercase font-black tracking-widest text-sky-400 px-3 py-1 pt-3">CHUYÊN MÔN & PHONG TRÀO</div>
@@ -206,10 +209,10 @@
   <div class="flex-1 flex flex-col min-w-0 pb-16 lg:pb-8">
 
     <!-- HEADER TOP: ĐIỀU HƯỚNG TUẦN HỌC & CÔNG CỤ -->
-    <header class="bg-white border-b border-slate-300 px-3 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+    <header class="bg-white border-b border-slate-300 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 sticky top-0 z-30 shadow-xs">
       <!-- Logo mobile -->
       <div class="flex items-center gap-2.5 lg:hidden">
-        <img src="app_icon_10a12.png" onerror="this.src='https://ui-avatars.com/api/?name=10A12&background=0284c7&color=fff&size=64'" alt="10A12" class="w-8 h-8 rounded-xl object-cover">
+        <img src="app_icon_10a12_192.png" onerror="this.src='app_icon_10a12.png'" alt="10A12" class="w-8 h-8 rounded-xl object-cover">
         <div>
           <h1 class="text-xs sm:text-sm font-black text-slate-900">Lớp 10A12 (K58)</h1>
           <p class="text-[9px] font-bold text-slate-500">THPT số 1 Quang Trung</p>
@@ -217,14 +220,11 @@
       </div>
 
       <!-- BỘ CHỌN TUẦN HỌC & TRẠNG THÁI KHÓA SỔ -->
-      <div class="hidden lg:flex items-center gap-2.5">
-        <div class="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-300">
+      <div class="flex flex-wrap items-center gap-1.5 sm:gap-2.5 order-3 w-full lg:order-none lg:w-auto">
+        <div class="flex items-center gap-1.5 sm:gap-2 bg-slate-100 px-2.5 sm:px-3 py-1 rounded-xl border border-slate-300">
           <i class="fa-solid fa-calendar-check text-sky-700 text-xs"></i>
-          <span class="text-xs font-black text-slate-700">Tuần học:</span>
-          <select id="currentWeekSelect" onchange="switchWeekScope(this.value)" class="bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 px-2 py-1 focus:ring-1 focus:ring-sky-500 cursor-pointer">
-            <!-- Chỉ cần để thẻ select trống, JS sẽ tự động tạo 35 tuần và chọn tuần thực tế -->
-	<select id="currentWeekSelect" onchange="switchWeekScope(this.value)" class="bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 px-2 py-1 focus:ring-1 focus:ring-sky-500 cursor-pointer">
-       </select>
+          <span class="text-[11px] sm:text-xs font-black text-slate-700">Tuần:</span>
+          <select id="currentWeekSelect" onchange="switchWeekScope(this.value)" class="bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 px-2 py-1 focus:ring-1 focus:ring-sky-500 cursor-pointer"></select>
         </div>
 
         <span id="weekStatusBadge" class="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
@@ -268,12 +268,19 @@
     </nav>
 
     <!-- BANNER TIẾN ĐỘ TIẾT HỌC THỜI GIAN THỰC -->
-    <section id="liveBannerSection" class="max-w-7xl w-full mx-auto px-3 sm:px-6 mt-3">
-      <div class="app-card rounded-2xl p-3 sm:p-4 border-l-4 border-l-sky-600 flex flex-col md:flex-row md:items-center justify-between gap-3">
+    <section id="liveBannerSection" class="max-w-7xl w-full mx-auto px-3 sm:px-6 mt-3 space-y-2">
+      <div class="rounded-2xl bg-gradient-to-r from-indigo-900 via-sky-800 to-teal-800 text-white px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] shadow-md border border-white/15">
+        <span id="topBannerDate" class="font-bold text-amber-300 shrink-0"><i class="fa-regular fa-calendar mr-1"></i> Hôm nay</span>
+        <span id="topBannerTicker" class="font-bold text-white truncate">✨ Chúc thầy và tập thể 10A12 một ngày học tập vui vẻ, hiệu quả!</span>
+      </div>
+      <div class="app-card rounded-2xl p-3 sm:p-4 border-l-4 border-l-sky-600 bg-gradient-to-r from-white via-sky-50/40 to-emerald-50/30 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div class="space-y-1">
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
             <span class="text-[10px] font-black tracking-wider uppercase text-sky-700" id="liveBannerSub">THỜI KHÓA BIỂU SỐ 3</span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <i class="fa-solid fa-clock-rotate-left mr-1"></i>Chốt tuần mới: <b id="weeklyRolloverCountdownText">00:00 Thứ 2</b>
+            </span>
           </div>
           <h2 class="text-xs sm:text-sm font-black text-slate-900" id="liveBannerTitle">Xác định tiết học theo TKB...</h2>
           <div class="flex items-center gap-2 text-[11px] text-slate-600 font-medium">
@@ -289,13 +296,13 @@
               <span>Tiến độ tiết</span>
               <span id="periodTimeRemaining">0%</span>
             </div>
-            <div class="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
-              <div id="periodProgressBar" class="h-full bg-gradient-to-r from-sky-600 to-emerald-500 transition-all duration-500" style="width: 0%"></div>
+            <div class="w-full h-2.5 rounded-full bg-slate-200 overflow-hidden shadow-inner">
+              <div id="periodProgressBar" class="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-500 transition-all duration-500" style="width: 0%"></div>
             </div>
           </div>
 
-          <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-right shrink-0 shadow-xs">
-            <span class="text-[9px] uppercase font-bold text-slate-400 block">Thời gian thực</span>
+          <div class="px-3.5 py-1.5 rounded-xl bg-gradient-to-br from-slate-900 to-indigo-950 border border-indigo-700/50 text-right shrink-0 shadow-sm">
+            <span class="text-[9px] uppercase font-bold text-sky-300 block">Thời gian thực</span>
             <span class="text-xs sm:text-sm font-mono font-black text-emerald-400" id="digitalClockText">--:--:--</span>
           </div>
         </div>
@@ -308,25 +315,37 @@
       <!-- 1. TAB TỔNG QUAN -->
       <section id="tab-tong-quan" class="tab-pane space-y-3 sm:space-y-4">
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-          <div class="app-card p-3.5 sm:p-4 rounded-2xl border-l-4 border-l-sky-600">
-            <p class="text-[10px] sm:text-[11px] font-black text-slate-500 uppercase">Sĩ số lớp 10A12</p>
+          <div class="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-sky-50 to-blue-100/70 border border-sky-200 border-l-4 border-l-sky-600 shadow-sm">
+            <div class="flex items-center justify-between">
+              <p class="text-[10px] sm:text-[11px] font-black text-sky-800 uppercase">Sĩ số lớp 10A12</p>
+              <span class="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center text-xs shadow-xs"><i class="fa-solid fa-users"></i></span>
+            </div>
             <p class="text-xl sm:text-2xl font-black text-slate-900 mt-1" id="dashTotalStudents">45 / 45</p>
-            <span class="text-[10px] text-emerald-700 font-bold"><i class="fa-solid fa-shield-heart mr-1"></i>Hiện diện đầy đủ</span>
+            <span class="text-[10px] text-sky-700 font-bold"><i class="fa-solid fa-shield-heart mr-1"></i>Hiện diện đầy đủ</span>
           </div>
-          <div class="app-card p-3.5 sm:p-4 rounded-2xl border-l-4 border-l-emerald-600">
-            <p class="text-[10px] sm:text-[11px] font-black text-slate-500 uppercase">Điểm thi đua TB Tuần</p>
+          <div class="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-100/70 border border-emerald-200 border-l-4 border-l-emerald-600 shadow-sm">
+            <div class="flex items-center justify-between">
+              <p class="text-[10px] sm:text-[11px] font-black text-emerald-800 uppercase">Điểm thi đua TB Tuần</p>
+              <span class="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs shadow-xs"><i class="fa-solid fa-trophy"></i></span>
+            </div>
             <p class="text-xl sm:text-2xl font-black text-emerald-700 mt-1" id="dashAvgScore">100.0đ</p>
-            <span class="text-[10px] text-slate-600 font-medium">Theo Thông tư 22/2021</span>
+            <span class="text-[10px] text-emerald-700 font-medium">Theo Thông tư 22/2021</span>
           </div>
-          <div class="app-card p-3.5 sm:p-4 rounded-2xl border-l-4 border-l-indigo-600">
-            <p class="text-[10px] sm:text-[11px] font-black text-slate-500 uppercase">Tồn két khả dụng</p>
-            <p class="text-xl sm:text-2xl font-black text-indigo-700 mt-1" id="dashFundBalance">0 đ</p>
-            <span class="text-[10px] text-emerald-700 font-bold">Đã kiểm soát duyệt chi</span>
+          <div class="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-violet-50 to-indigo-100/70 border border-violet-200 border-l-4 border-l-violet-600 shadow-sm">
+            <div class="flex items-center justify-between">
+              <p class="text-[10px] sm:text-[11px] font-black text-violet-800 uppercase">Tồn két khả dụng</p>
+              <span class="w-7 h-7 rounded-lg bg-violet-600 text-white flex items-center justify-center text-xs shadow-xs"><i class="fa-solid fa-vault"></i></span>
+            </div>
+            <p class="text-xl sm:text-2xl font-black text-violet-800 mt-1" id="dashFundBalance">0 đ</p>
+            <span class="text-[10px] text-violet-700 font-bold">Đã kiểm soát duyệt chi</span>
           </div>
-          <div class="app-card p-3.5 sm:p-4 rounded-2xl border-l-4 border-l-amber-600">
-            <p class="text-[10px] sm:text-[11px] font-black text-slate-500 uppercase">Thời khóa biểu</p>
-            <p class="text-xs sm:text-sm font-black text-amber-700 mt-1 truncate">TKB Số 3 (02/11/2026)</p>
-            <span class="text-[10px] text-slate-600 font-medium">GVCN: ThS. Quốc Mẫn</span>
+          <div class="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-100/70 border border-amber-200 border-l-4 border-l-amber-500 shadow-sm">
+            <div class="flex items-center justify-between">
+              <p class="text-[10px] sm:text-[11px] font-black text-amber-800 uppercase">Thời khóa biểu</p>
+              <span class="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center text-xs shadow-xs"><i class="fa-solid fa-calendar-days"></i></span>
+            </div>
+            <p id="dashTkbTitle" class="text-xs sm:text-sm font-black text-amber-800 mt-1 truncate">TKB Số 3 (02/11/2026)</p>
+            <span class="text-[10px] text-amber-700 font-medium">GVCN: ThS. Quốc Mẫn</span>
           </div>
         </div>
 
@@ -483,11 +502,15 @@
               <p class="text-[11px] text-slate-600 font-medium">Bảng & Bàn GV ở dưới cùng • Cửa ra vào phía dưới bên phải • Chạm 2 ghế để đổi chỗ</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
+              <button onclick="exportSeatingToDocx()" id="btnExportSeatingDocx" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-700 hover:to-blue-800 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5" title="Xuất Sơ Đồ Chỗ Ngồi ra file Word (.docx)">
+                <i class="fa-solid fa-file-word"></i>
+                <span>Xuất Sơ Đồ (.DOCX)</span>
+              </button>
               <button onclick="rotateSeatingColumns()" id="btnRotateSeating" class="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold hover:bg-amber-100 transition flex items-center gap-1.5" title="Xoay dãy tuần hoàn: Dãy 1 ➔ Dãy 2 ➔ Dãy 3 ➔ Dãy 4 ➔ Dãy 1">
                 <i class="fa-solid fa-arrows-rotate"></i>
                 <span>Xoay Dãy Tuần Hoàn</span>
               </button>
-              <button onclick="saveSeatingHistorySnapshot()" class="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-300 text-xs font-bold hover:bg-indigo-100 transition flex items-center gap-1.5" title="Lưu lại mốc lịch sử sơ đồ này">
+              <button onclick="saveSeatingHistorySnapshot()" id="btnSaveSeatingHistory" class="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-300 text-xs font-bold hover:bg-indigo-100 transition flex items-center gap-1.5" title="Lưu lại mốc lịch sử sơ đồ này">
                 <i class="fa-solid fa-bookmark"></i>
                 <span>Lưu Mốc Sơ Đồ</span>
               </button>
@@ -498,26 +521,28 @@
             </div>
           </div>
 
-          <div class="mt-4 p-3 sm:p-5 rounded-2xl bg-slate-200/80 border border-slate-300 flex flex-col items-center overflow-x-auto">
-            <!-- TIÊU ĐỀ 4 DÃY SẮC NÉT (ĐÃ MỞ RỘNG MIN-W 860PX) -->
-            <div class="w-full max-w-5xl min-w-[860px] grid grid-cols-12 gap-2 sm:gap-4 mb-3 items-center text-center">
-              <div class="col-span-5 grid grid-cols-2 gap-2">
-                <div class="py-1.5 px-2 rounded-xl bg-blue-700 text-white text-xs font-black uppercase tracking-wider shadow-sm">
-                  <i class="fa-solid fa-users mr-1"></i> Dãy 1 (Tổ 1)
+          <div id="seatingTeamLegend" class="mt-3"></div>
+
+          <div class="mt-3 p-3 sm:p-5 rounded-2xl bg-gradient-to-b from-sky-50/70 via-slate-100/90 to-indigo-50/70 border border-indigo-200 flex flex-col items-center overflow-x-auto">
+            <!-- TIÊU ĐỀ 4 DÃY ĐỘC LẬP (KHÔNG GẮN TỔ CỐ ĐỊNH) -->
+            <div class="w-full max-w-5xl min-w-[860px] grid grid-cols-12 gap-2.5 sm:gap-4 mb-3 items-center text-center">
+              <div class="col-span-5 grid grid-cols-2 gap-3">
+                <div class="py-2 px-2 rounded-xl bg-gradient-to-r from-blue-700 to-sky-600 text-white text-xs font-black uppercase tracking-wider shadow-sm">
+                  <i class="fa-solid fa-chair mr-1"></i> Dãy 1
                 </div>
-                <div class="py-1.5 px-2 rounded-xl bg-indigo-700 text-white text-xs font-black uppercase tracking-wider shadow-sm">
-                  <i class="fa-solid fa-users mr-1"></i> Dãy 2 (Tổ 2)
+                <div class="py-2 px-2 rounded-xl bg-gradient-to-r from-indigo-700 to-violet-600 text-white text-xs font-black uppercase tracking-wider shadow-sm">
+                  <i class="fa-solid fa-chair mr-1"></i> Dãy 2
                 </div>
               </div>
               <div class="col-span-2 text-center text-xs font-black uppercase text-slate-700">
-                <span class="px-3 py-1 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 shadow-2xs font-bold">LỐI ĐI</span>
+                <span class="px-3 py-1 rounded-lg bg-white border border-slate-300 text-slate-800 shadow-2xs font-bold">LỐI ĐI</span>
               </div>
-              <div class="col-span-5 grid grid-cols-2 gap-2">
-                <div class="py-1.5 px-2 rounded-xl bg-emerald-700 text-white text-xs font-black uppercase tracking-wider shadow-sm">
-                  <i class="fa-solid fa-users mr-1"></i> Dãy 3 (Tổ 3)
+              <div class="col-span-5 grid grid-cols-2 gap-3">
+                <div class="py-2 px-2 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-600 text-white text-xs font-black uppercase tracking-wider shadow-sm">
+                  <i class="fa-solid fa-chair mr-1"></i> Dãy 3
                 </div>
-                <div class="py-1.5 px-2 rounded-xl bg-amber-700 text-white text-xs font-black uppercase tracking-wider shadow-sm">
-                  <i class="fa-solid fa-users mr-1"></i> Dãy 4 (Tổ 4)
+                <div class="py-2 px-2 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 text-white text-xs font-black uppercase tracking-wider shadow-sm">
+                  <i class="fa-solid fa-chair mr-1"></i> Dãy 4
                 </div>
               </div>
             </div>
@@ -546,21 +571,24 @@
         </div>
       </section>
 
-      <!-- 4. TAB THỜI KHÓA BIỂU SỐ 3 -->
+      <!-- 4. TAB THỜI KHÓA BIỂU -->
       <section id="tab-tkb" class="tab-pane hidden space-y-3 sm:space-y-4">
         <div class="app-card rounded-2xl p-4 sm:p-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
             <div>
               <h2 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
                 <i class="fa-solid fa-calendar-days text-indigo-700"></i>
-                Thời Khóa Biểu Lớp 10A12 (Số 3 - Từ ngày 02/11/2026)
+                <span id="tkbTabHeading">Thời Khóa Biểu Lớp 10A12 (Số 3 - Từ ngày 02/11/2026)</span>
               </h2>
               <p class="text-[11px] text-slate-600 font-medium">Áp dụng chính thức • GVCN: ThS. Trần Dương Quốc Mẫn</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
               <input type="file" id="uploadTkbFileInput" accept="image/*" class="hidden" onchange="handleUploadNewTkbImage(event)">
-              <button onclick="document.getElementById('uploadTkbFileInput').click()" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5" title="Đưa ảnh TKB mới lên">
+              <button onclick="document.getElementById('uploadTkbFileInput').click()" id="btnUploadTkb" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5" title="Đưa ảnh TKB mới lên">
                 <i class="fa-solid fa-cloud-arrow-up"></i> Đưa TKB Mới Lên
+              </button>
+              <button onclick="openEditTkbModal()" id="btnEditTkb" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5" title="Cập nhật Số hiệu, Ngày áp dụng & lịch từng tiết">
+                <i class="fa-solid fa-pen-to-square"></i> Sửa Số hiệu &amp; Lịch tiết
               </button>
               <button onclick="openZoomTkbModal()" class="px-3.5 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5">
                 <i class="fa-solid fa-expand"></i> Phóng to ảnh
@@ -569,6 +597,23 @@
                 <i class="fa-solid fa-download"></i> Tải ảnh về máy
               </button>
             </div>
+          </div>
+
+          <!-- BẢN ẢNH TKB CHÍNH THỨC (HIỂN THỊ LÊN TRÊN CÙNG ĐỂ DỄ THEO DÕI KHI CẬP NHẬT TKB MỚI) -->
+          <div id="tkbImageCardWrapper" class="mt-4 p-4 rounded-2xl bg-gradient-to-br from-sky-50 via-white to-indigo-50 border border-sky-200 text-center space-y-2.5 shadow-2xs">
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <p class="text-xs font-black text-slate-800"><i class="fa-solid fa-image mr-1 text-sky-700"></i>Bản Ảnh Thời Khóa Biểu Chính Thức Lớp 10A12</p>
+              <span id="tkbUpdatedBadge" class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">Đang hiển thị ảnh TKB hiện hành</span>
+            </div>
+            <img id="tkbImageDisplay" src="tkb_10a12.png" alt="Thời khóa biểu lớp 10A12" onerror="this.classList.add('hidden'); var n=document.getElementById('tkbImgFallbackNote'); if(n) n.classList.remove('hidden');" class="max-w-full sm:max-w-2xl mx-auto rounded-xl shadow-md border border-slate-300 cursor-pointer" onclick="openZoomTkbModal()">
+            <p id="tkbImgFallbackNote" class="hidden text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">Ảnh TKB chưa khả dụng hoặc đã ẩn. Quý thầy cô &amp; học sinh xem lịch chi tiết ở 2 bảng Buổi Sáng / Buổi Chiều phía dưới.</p>
+          </div>
+
+          <div id="tkbTableSyncHint" class="hidden mt-3 p-3 rounded-xl bg-amber-50 border border-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-900">
+            <span><i class="fa-solid fa-circle-info mr-1 text-amber-600"></i><b>Lưu ý đồng bộ:</b> Ảnh TKB mới đã hiển thị ở trên, nhưng Số hiệu trên tiêu đề và bảng tra tiết tự động bên dưới vẫn đang theo mẫu cũ (<b>Số 3</b>).</span>
+            <button onclick="openEditTkbModal()" class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-[11px] shrink-0 transition">
+              Cập nhật Số hiệu &amp; Lịch tiết ngay
+            </button>
           </div>
 
           <!-- BẢNG TKB BUỔI SÁNG -->
@@ -618,11 +663,6 @@
               </table>
             </div>
           </div>
-
-          <div class="mt-5 p-3 rounded-2xl bg-slate-50 border border-slate-300 text-center space-y-2">
-            <p class="text-xs font-black text-slate-800"><i class="fa-solid fa-image mr-1 text-sky-700"></i>Bản Ảnh Thời Khóa Biểu Lớp 10A12</p>
-            <img id="tkbImageDisplay" src="tkb_10a12.png" alt="Thời khóa biểu lớp 10A12" class="max-w-full sm:max-w-xl mx-auto rounded-xl shadow-md border border-slate-300 cursor-pointer" onclick="openZoomTkbModal()">
-          </div>
         </div>
       </section>
 
@@ -670,10 +710,10 @@
               <p class="text-[11px] text-slate-600 font-medium">Phụ trách: <b>Đặng Thị Hiền Trân (Lớp phó Văn Thể Mỹ)</b> • Phong trào & Media lớp</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-              <button onclick="openAddVtmEventModal()" class="px-3 py-1.5 rounded-xl bg-purple-50 text-purple-800 border border-purple-300 text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1.5">
+              <button onclick="openAddVtmEventModal()" id="btnAddVtmEvent" class="px-3 py-1.5 rounded-xl bg-purple-50 text-purple-800 border border-purple-300 text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1.5">
                 <i class="fa-solid fa-plus"></i> + Sự Kiện / Đội Tuyển
               </button>
-              <button onclick="openUploadMediaModal()" class="px-3 py-1.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-300 text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1.5">
+              <button onclick="openUploadMediaModal()" id="btnUploadMedia" class="px-3 py-1.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-300 text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1.5">
                 <i class="fa-solid fa-camera"></i> + Thêm Ảnh / Clip Kỷ Niệm
               </button>
             </div>
@@ -707,7 +747,7 @@
             <div>
               <h2 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
                 <i class="fa-solid fa-book-bookmark text-sky-700"></i>
-                Sổ Đầu Bài Điện Tử (Theo TKB Số 3)
+                <span id="sdbTkbHeading">Sổ Đầu Bài Điện Tử (Theo TKB Số 3)</span>
               </h2>
               <p class="text-[11px] text-slate-600 font-medium">Tự động nhận diện môn & GV theo TKB • Chống trừ điểm 2 lần nếu Tổ trưởng đã chấm</p>
             </div>
@@ -802,15 +842,15 @@
 
               <p style="margin: 0 0 3pt 18pt; text-align: justify;"><b>4. Báo cáo của Ban cán sự chuyên trách:</b></p>
               <p style="margin: 0 0 2pt 36pt; text-align: justify;">- <i>Trực nhật & Vệ sinh (Lớp phó Lao động):</i> Đã hoàn thành 7 ca trực nhật phòng học trong tuần; giữ gìn vệ sinh lớp sạch sẽ.</p>
-              <p style="margin: 0 0 2pt 36pt; text-align: justify;">- <i>Học tập & Sổ đầu bài (Lớp phó Học tập):</i> Ghi chép sổ đầu bài đầy đủ, theo dõi nghiêm túc các tiết học theo Thời khóa biểu Số 3.</p>
-              <p style="margin: 0 0 4pt 36pt; text-align: justify;">- <i>Văn thể mỹ & Đoàn thể (Lớp phó VTM & Bí thư):</i> Đôn đốc học sinh tham gia phong trào, cập nhật kho tư liệu hoạt động lớp.</p>
+              <p style="margin: 0 0 2pt 36pt; text-align: justify;">- <i>Học tập &amp; Sổ đầu bài (Lớp phó Học tập):</i> Ghi chép sổ đầu bài đầy đủ, theo dõi nghiêm túc các tiết học theo <span id="shlTkbRef1">Thời khóa biểu Số 3</span>.</p>
+              <p style="margin: 0 0 4pt 36pt; text-align: justify;">- <i>Văn thể mỹ &amp; Đoàn thể (Lớp phó VTM &amp; Bí thư):</i> Đôn đốc học sinh tham gia phong trào, cập nhật kho tư liệu hoạt động lớp.</p>
             </div>
 
             <!-- PHẦN III: Ý KIẾN GVCN -->
             <div style="font-size: 13pt; line-height: 1.45;">
               <p style="margin: 6pt 0 4pt 0; font-weight: bold; text-transform: uppercase;">III. Ý KIẾN KẾT LUẬN VÀ PHƯƠNG HƯỚNG CỦA GIÁO VIÊN CHỦ NHIỆM</p>
               <p style="margin: 0 0 3pt 18pt; text-align: justify;">1. Tiếp tục duy trì nghiêm túc giờ giấc, đồng phục, bảng tên, quy chế xếp hàng đầu tuần; tuyệt đối không sử dụng điện thoại di động trong giờ học khi chưa được sự đồng ý của giáo viên bộ môn.</p>
-              <p style="margin: 0 0 3pt 18pt; text-align: justify;">2. Chuẩn bị bài chu đáo theo đúng Thời khóa biểu Số 3, tăng cường trao đổi thảo luận nhóm và tích cực phát biểu xây dựng bài.</p>
+              <p style="margin: 0 0 3pt 18pt; text-align: justify;">2. Chuẩn bị bài chu đáo theo đúng <span id="shlTkbRef2">Thời khóa biểu Số 3</span>, tăng cường trao đổi thảo luận nhóm và tích cực phát biểu xây dựng bài.</p>
               <p style="margin: 0 0 4pt 18pt; text-align: justify;">3. Các tổ trưởng và cán sự tiếp tục duy trì chấm chéo nề nếp công tâm, minh bạch theo đúng Quy chế 01 của lớp.</p>
             </div>
 
@@ -867,18 +907,21 @@
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-xs font-black text-slate-800">Đợt thu:</span>
               <select id="campaignSelect" onchange="switchFundCampaign(this.value)" class="bg-slate-50 border border-slate-300 text-slate-900 text-xs font-black rounded-xl px-3 py-1.5 focus:ring-1 focus:ring-sky-500"></select>
-              <button onclick="openNewCampaignModal()" class="px-2.5 py-1.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-300 text-xs font-bold hover:bg-sky-100">
+              <button onclick="openNewCampaignModal()" id="btnOpenNewCampaign" class="px-2.5 py-1.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-300 text-xs font-bold hover:bg-sky-100">
                 <i class="fa-solid fa-plus mr-1"></i> Mở đợt mới
               </button>
-              <button onclick="openManageCampaignsModal()" class="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold hover:bg-slate-200" title="Quản lý và xóa các đợt thu trùng lặp">
+              <button onclick="openManageCampaignsModal()" id="btnManageCampaigns" class="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold hover:bg-slate-200" title="Quản lý và xóa các đợt thu trùng lặp">
                 <i class="fa-solid fa-list-check mr-1"></i> Quản lý đợt thu
               </button>
             </div>
-            <div class="flex items-center gap-2">
-              <button onclick="openAddExpenseModal()" class="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-300 text-xs font-bold hover:bg-rose-100 flex items-center gap-1.5">
+            <div class="flex items-center gap-2 flex-wrap">
+              <button onclick="openAddIncomeModal()" id="btnOpenAddIncome" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white border border-emerald-700 text-xs font-black hover:bg-emerald-700 flex items-center gap-1.5 shadow-2xs" title="Ghi nhận GVCN ủng hộ thêm hoặc phụ huynh tài trợ ngoài định mức HS">
+                <i class="fa-solid fa-hand-holding-heart"></i> + Thu Ủng Hộ / Tài Trợ
+              </button>
+              <button onclick="openAddExpenseModal()" id="btnOpenAddExpense" class="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-300 text-xs font-bold hover:bg-rose-100 flex items-center gap-1.5">
                 <i class="fa-solid fa-receipt"></i> + Lập Phiếu Chi
               </button>
-              <button onclick="saveCurrentFundState()" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold hover:bg-emerald-100 flex items-center gap-1.5">
+              <button onclick="saveCurrentFundState()" id="btnSaveFundState" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold hover:bg-emerald-100 flex items-center gap-1.5">
                 <i class="fa-solid fa-cloud-arrow-up"></i> Lưu Đồng Bộ
               </button>
             </div>
@@ -922,13 +965,13 @@
               <button onclick="downloadSampleExcelTemplate()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition flex items-center gap-1.5 border border-slate-300">
                 <i class="fa-solid fa-file-arrow-down"></i> Tải File Excel Mẫu
               </button>
-              <button onclick="document.getElementById('excelFileInput').click()" class="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold hover:bg-amber-100 transition flex items-center gap-1.5">
+              <button onclick="document.getElementById('excelFileInput').click()" id="btnImportExcel" class="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold hover:bg-amber-100 transition flex items-center gap-1.5">
                 <i class="fa-solid fa-file-import"></i> Nhập File Excel
               </button>
               <button onclick="exportStudentProfilesExcel()" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold hover:bg-emerald-100 transition flex items-center gap-1.5">
                 <i class="fa-solid fa-file-excel"></i> Xuất Excel
               </button>
-              <button onclick="openAddNewStudentModal()" class="px-3 py-1.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-300 text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1.5">
+              <button onclick="openAddNewStudentModal()" id="btnAddNewStudent" class="px-3 py-1.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-300 text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1.5">
                 <i class="fa-solid fa-user-plus"></i> + Thêm HS
               </button>
             </div>
@@ -974,7 +1017,7 @@
               </h3>
               <p class="text-[11px] text-slate-600 font-medium">GVCN luân chuyển, bổ nhiệm Lớp trưởng, Lớp phó, 4 Tổ trưởng (Phân quyền tự động)</p>
             </div>
-            <button onclick="openAssignRoleModal()" class="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-300 text-xs font-bold hover:bg-indigo-100 transition flex items-center gap-1.5">
+            <button onclick="openAssignRoleModal()" id="btnAssignRole" class="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-300 text-xs font-bold hover:bg-indigo-100 transition flex items-center gap-1.5">
               <i class="fa-solid fa-user-pen"></i> Bổ nhiệm cán sự mới
             </button>
           </div>
@@ -1028,14 +1071,24 @@
               <input type="text" id="customBannerTickerInput" placeholder="Nhập lời nhắn hoặc để trống tự động chúc..." class="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-300 text-xs text-slate-900 font-bold">
               <button onclick="saveCustomBannerTicker()" class="mt-1 px-2.5 py-1 rounded bg-sky-700 text-white font-bold text-[10px]">Cập nhật thông điệp</button>
             </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-300 flex flex-col justify-between">
+            <div id="autoRolloverStatusBox" class="p-3.5 rounded-xl bg-gradient-to-br from-emerald-50 via-white to-sky-50 border border-emerald-200 flex flex-col justify-between space-y-2">
               <div>
-                <span class="text-[10px] text-slate-500 uppercase font-black block">Bảo mật tài khoản GVCN</span>
-                <p class="text-slate-600 font-medium text-[11px] mt-0.5">Mật khẩu riêng tư của Thầy</p>
+                <span class="text-[10px] text-emerald-800 uppercase font-black block"><i class="fa-solid fa-calendar-check mr-1"></i>Lịch Tự Động Chốt Tuần (00:00 Thứ 2)</span>
+                <p class="text-slate-700 font-medium text-[11px] mt-1">Tự động lưu trữ tuần cũ + Reset toàn bộ 45 HS về 100đ lúc <b>00:00 sáng Thứ Hai hàng tuần</b>.</p>
+                <p class="text-[10px] text-slate-600 mt-1">Lần chốt tự động gần nhất: <b id="autoRolloverLastTime">Chưa ghi nhận</b></p>
+                <p class="text-[10px] font-bold text-indigo-700 mt-1" id="autoRolloverTriggerBadge">Tự động khi mở sổ T2 (hoặc bật Trigger GS)</p>
               </div>
-              <button onclick="changeGvcnPassword()" class="mt-2 py-1.5 rounded-lg bg-sky-50 text-sky-800 hover:bg-sky-100 font-bold text-xs border border-sky-300 transition">
-                Đổi mật khẩu GVCN
-              </button>
+              <div class="mt-2 space-y-1.5">
+                <button onclick="activateMondayRolloverTriggerOnCloud()" id="btnActivateMondayTrigger" class="w-full py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-xs shadow-xs transition">
+                  <i class="fa-solid fa-clock mr-1"></i> Bật Trigger 00:00 Thứ 2 (Google Sheets)
+                </button>
+                <button onclick="changeGvcnPassword()" class="w-full py-1.5 rounded-lg bg-sky-50 text-sky-800 hover:bg-sky-100 font-bold text-xs border border-sky-300 transition">
+                  Đổi mật khẩu GVCN
+                </button>
+                <button onclick="resetWeeklyScoresPrompt()" id="btnResetWeeklyScores" class="w-full py-1.5 rounded-lg bg-rose-50 text-rose-800 hover:bg-rose-100 font-bold text-xs border border-rose-300 transition">
+                  Khởi tạo Tuần Mới Ngay (Reset 100đ)
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1287,7 +1340,7 @@
   <div id="zoomTkbModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex flex-col items-center justify-center p-3 sm:p-5" onclick="closeZoomTkbModal()">
     <div class="relative max-w-4xl w-full p-2" onclick="event.stopPropagation()">
       <div class="flex items-center justify-between pb-2 text-white text-xs font-bold">
-        <span>Thời Khóa Biểu Số 3 - Lớp 10A12</span>
+        <span id="zoomTkbTitle">Thời Khóa Biểu Số 3 - Lớp 10A12</span>
         <button onclick="closeZoomTkbModal()" class="text-slate-300 hover:text-white p-1 text-base"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <img id="zoomTkbImage" src="tkb_10a12.png" alt="Phóng to TKB" class="w-full rounded-2xl shadow-2xl border border-white/20">
@@ -1305,6 +1358,20 @@
       </div>
       
       <div class="space-y-2.5 text-xs">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-slate-700 font-bold block mb-1">Buổi học:</label>
+            <select id="logSessionSelect" onchange="updateSuggestedSubjectByTkb()" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-black">
+              <option value="BUOI_1">Buổi Sáng (Thứ 2/3/4)</option>
+              <option value="BUOI_2">Buổi Chiều Thứ 2</option>
+              <option value="BUOI_3">Buổi Chiều Thứ 3</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-slate-700 font-bold block mb-1">Ngày học:</label>
+            <input type="date" id="logDateInput" onchange="updateSuggestedSubjectByTkb()" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-black">
+          </div>
+        </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="text-slate-700 font-bold block mb-1">Tiết học:</label>
@@ -1328,7 +1395,7 @@
         </div>
 
         <div class="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-900">
-          <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Môn học gợi ý: <b id="suggestedSubjectText">Đang xác định theo TKB Số 3...</b>
+          <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Môn học gợi ý: <b id="suggestedSubjectText">Đang xác định theo TKB hiện hành...</b>
         </div>
 
         <div class="p-3 rounded-xl bg-slate-50 border border-slate-300 space-y-2">
@@ -1489,6 +1556,95 @@
     </div>
   </div>
 
+  <!-- MODAL GHI NHẬN THU ỦNG HỘ / GVCN TÀI TRỢ -->
+  <div id="addIncomeModal" class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white max-w-sm w-full p-5 rounded-2xl border border-emerald-300 space-y-3 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+        <h3 class="text-sm font-black text-emerald-800 flex items-center gap-2">
+          <i class="fa-solid fa-hand-holding-heart"></i> Ghi Nhận Thu Ủng Hộ / Tài Trợ
+        </h3>
+        <button onclick="closeAddIncomeModal()" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p class="text-[11px] text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
+        Khoản ủng hộ của GVCN / Phụ huynh được cộng thẳng vào <b>Tổng Thu &amp; Tồn Két</b> trên Sổ cái mà không làm sai lệch tỷ lệ đóng của 45 HS.
+      </p>
+      <div class="space-y-2 text-xs">
+        <div>
+          <label class="text-slate-700 font-bold block mb-1">Nguồn thu / Hạng mục:</label>
+          <select id="incomeCategorySelect" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-bold">
+            <option value="GVCN ủng hộ thêm">GVCN ủng hộ thêm quỹ lớp</option>
+            <option value="Phụ huynh / Mạnh thường quân tài trợ">Phụ huynh / Nhà hảo tâm tài trợ</option>
+            <option value="Thưởng phong trào / Tiết kiệm">Thưởng phong trào / Thu bổ sung</option>
+            <option value="Thu khác ngoài định mức">Thu khác ngoài định mức</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-700 font-bold block mb-1">Người ủng hộ / Đại diện nộp:</label>
+          <input type="text" id="incomeDonorInput" placeholder="VD: ThS. Trần Dương Quốc Mẫn (GVCN)" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-bold">
+        </div>
+        <div>
+          <label class="text-slate-700 font-bold block mb-1">Số tiền ủng hộ (VNĐ):</label>
+          <input type="number" id="incomeAmountInput" placeholder="Ví dụ: 500000" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-emerald-800 font-mono font-black">
+        </div>
+        <div>
+          <label class="text-slate-700 font-bold block mb-1">Nội dung chi tiết:</label>
+          <input type="text" id="incomeNoteInput" placeholder="VD: GVCN ủng hộ quỹ liên hoan / trang bị lớp" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900">
+        </div>
+      </div>
+      <div class="flex items-center gap-2 pt-2 border-t border-slate-200">
+        <button onclick="closeAddIncomeModal()" class="flex-1 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-700 border border-slate-300">Hủy</button>
+        <button onclick="submitAddIncome()" class="flex-1 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-xs font-black text-white shadow-md">Ghi Vào Sổ Quỹ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CHỈNH SỐ HIỆU & BẢNG TIẾT TKB -->
+  <div id="editTkbModal" class="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-white max-w-4xl w-full p-4 sm:p-5 rounded-2xl border border-indigo-300 max-h-[92vh] flex flex-col space-y-3 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+        <h3 class="text-sm sm:text-base font-black text-indigo-900 flex items-center gap-2">
+          <i class="fa-solid fa-calendar-check text-indigo-600"></i> Cập Nhật Số Hiệu &amp; Bảng Thời Khóa Biểu
+        </h3>
+        <button onclick="closeEditTkbModal()" class="text-slate-400 hover:text-slate-700 p-1"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p id="editTkbUploadNotice" class="hidden text-xs font-bold text-emerald-900 bg-emerald-50 border border-emerald-300 rounded-xl p-2.5">
+        <i class="fa-solid fa-circle-check mr-1 text-emerald-600"></i> Ảnh TKB mới đã được lưu! Thầy hãy cập nhật <b>Số hiệu TKB</b> (VD: Số 4), <b>Ngày áp dụng</b> &amp; các tiết bên dưới để tiêu đề trên cùng và Sổ đầu bài đồng bộ theo TKB mới.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="text-slate-700 font-bold block mb-1">Số hiệu TKB (hiển thị trên tiêu đề &amp; banner):</label>
+          <input type="text" id="editTkbVersionInput" placeholder="VD: Số 4" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-black">
+        </div>
+        <div>
+          <label class="text-slate-700 font-bold block mb-1">Thực hiện từ ngày:</label>
+          <input type="text" id="editTkbDateInput" placeholder="VD: 09/11/2026" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 font-black">
+        </div>
+      </div>
+      <div class="overflow-auto flex-1 rounded-xl border border-slate-300">
+        <table class="w-full text-left border-collapse">
+          <thead class="bg-slate-800 text-white text-[11px] font-black uppercase sticky top-0">
+            <tr>
+              <th class="px-2.5 py-2 whitespace-nowrap">Buổi / Tiết</th>
+              <th class="px-2 py-2 text-center">Thứ 2</th>
+              <th class="px-2 py-2 text-center">Thứ 3</th>
+              <th class="px-2 py-2 text-center">Thứ 4</th>
+              <th class="px-2 py-2 text-center">Thứ 5</th>
+              <th class="px-2 py-2 text-center">Thứ 6</th>
+              <th class="px-2 py-2 text-center">Thứ 7</th>
+            </tr>
+          </thead>
+          <tbody id="editTkbScheduleBody"></tbody>
+        </table>
+      </div>
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+        <button onclick="closeEditTkbModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-700 border border-slate-300">Để sau</button>
+        <button onclick="saveTkbConfigFromModal()" class="px-5 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-xs font-black text-white shadow-md">
+          <i class="fa-solid fa-floppy-disk mr-1"></i> Lưu &amp; Đồng Bộ Toàn Hệ Thống
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL HỒ SƠ CHI TIẾT HỌC SINH -->
   <div id="studentDetailModal" class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm hidden flex items-center justify-center p-3 sm:p-4">
     <div class="bg-white max-w-2xl w-full p-4 sm:p-6 rounded-2xl border border-slate-300 max-h-[92vh] overflow-y-auto space-y-4 shadow-2xl">
@@ -1501,6 +1657,7 @@
       </div>
       <div class="space-y-4 text-xs" id="modalStudentForm"></div>
       <div class="flex items-center gap-2 pt-3 border-t border-slate-200" id="studentDetailModalActions">
+        <button onclick="deleteCurrentModalStudent()" id="btnDeleteStudent" class="hidden py-2 px-3 rounded-xl bg-rose-50 text-xs font-bold text-rose-700 border border-rose-300 hover:bg-rose-100">Xóa HS</button>
         <button onclick="closeStudentModal()" class="flex-1 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-700 border border-slate-300">Đóng</button>
         <button onclick="saveStudentProfileChanges()" id="btnSaveStudentChanges" class="flex-1 py-2 rounded-xl bg-sky-700 text-xs font-black text-white shadow-md">Lưu Thay Đổi</button>
       </div>

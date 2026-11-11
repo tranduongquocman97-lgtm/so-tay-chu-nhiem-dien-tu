@@ -12,13 +12,13 @@
   "categories": ["education", "productivity"],
   "icons": [
     {
-      "src": "app_icon_gvcn.png",
+      "src": "app_icon_gvcn_192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "app_icon_gvcn.png",
+      "src": "app_icon_gvcn_512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
