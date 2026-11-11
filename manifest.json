@@ -1,0 +1,27 @@
+{
+  "id": "so-tay-chu-nhiem-10a12",
+  "start_url": "./index.html",
+  "scope": "./",
+  "name": "Sổ Tay Chủ Nhiệm 10A12 - K58-QT",
+  "short_name": "10A12 GVCN",
+  "description": "Hệ thống quản lý nề nếp, chuyên cần, sơ đồ lớp và quỹ lớp 10A12 - THPT số 1 Quang Trung",
+  "display": "standalone",
+  "background_color": "#0b1120",
+  "theme_color": "#0b1120",
+  "orientation": "any",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "app_icon_gvcn.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "app_icon_gvcn.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cổng Tra Cứu Phụ Huynh & Học Sinh - Lớp 10A12 (K58-QT)</title>
+  
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <meta name="theme-color" content="#0f172a">
+  <link rel="apple-touch-icon" href="app_icon_10a12.png">
+
+  <style>
+    body { 
+      background-color: #e2e8f0; /* Nền Slate 200 chống lóa, tương phản cao */
+      color: #0f172a; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+    }
+    .app-card { 
+      background-color: #ffffff; 
+      border: 1px solid #cbd5e1; 
+      box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.05); 
+    }
+    input, select { font-size: 15px !important; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white pb-12">
+
+  <!-- ==================== HEADER TRANG TRA CỨU (DARK NAVY EXECUTIVE) ==================== -->
+  <header class="bg-[#0f172a] border-b border-slate-800 sticky top-0 z-30 shadow-md text-white">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <img src="app_icon_10a12.png" onerror="this.src='https://ui-avatars.com/api/?name=10A12&background=0284c7&color=fff&size=64'" alt="Logo 10A12" class="w-10 h-10 rounded-xl shadow-xs border border-white/20 object-cover">
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm sm:text-base font-black text-white">Cổng Tra Cứu 10A12</h1>
+            <span class="text-[9px] font-black px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">K58</span>
+          </div>
+          <p class="text-[10px] text-slate-400 font-medium">THPT số 1 Quang Trung • GVCN: ThS. Quốc Mẫn</p>
+        </div>
+      </div>
+
+      <button onclick="openStatementModal()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-500 text-xs font-bold transition flex items-center gap-1.5 shadow-xs">
+        <i class="fa-solid fa-file-invoice-dollar"></i>
+        <span class="hidden sm:inline">Sao Kê Quỹ Lớp</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== NỘI DUNG CHÍNH ==================== -->
+  <main class="max-w-4xl w-full mx-auto px-4 mt-4 space-y-4 flex-1">
+
+    <!-- KHUNG TÌM KIẾM HỌC SINH -->
+    <div class="app-card rounded-3xl p-5 sm:p-6 space-y-3">
+      <div class="text-center sm:text-left">
+        <h2 class="text-base sm:text-lg font-black text-slate-900 flex items-center justify-center sm:justify-start gap-2">
+          <i class="fa-solid fa-magnifying-glass text-sky-700"></i>
+          Tra Cứu Hồ Sơ & Nề Nếp Học Sinh
+        </h2>
+        <p class="text-xs text-slate-600 font-medium mt-0.5">Nhập Họ tên học sinh (có dấu hoặc không dấu), Mã HS hoặc Số CCCD 12 số của con</p>
+      </div>
+
+      <form onsubmit="handleLookupStudent(event)" class="flex flex-col sm:flex-row gap-2.5">
+        <div class="relative flex-1">
+          <i class="fa-solid fa-id-badge absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
+          <input type="text" id="lookupInput" placeholder="Ví dụ: Nguyễn Tấn An, nguyentanan, HS01 hoặc 052206..." required class="w-full pl-10 pr-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition font-bold">
+        </div>
+        <button type="submit" class="py-2.5 px-6 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-700 hover:to-blue-800 text-white font-black text-xs sm:text-sm uppercase tracking-wider shadow-md shadow-sky-600/25 transition flex items-center justify-center gap-2 shrink-0">
+          <i class="fa-solid fa-search"></i>
+          <span>Tra Cứu</span>
+        </button>
+      </form>
+
+      <div id="lookupAlertMsg" class="hidden p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-bold text-center"></div>
+    </div>
+
+    <!-- KHU VỰC KẾT QUẢ TRA CỨU CHI TIẾT -->
+    <div id="lookupResultSection" class="hidden space-y-4">
+
+      <!-- THẺ THÔNG TIN TỔNG QUAN HỌC SINH -->
+      <div class="app-card rounded-3xl p-5 sm:p-6 border-l-4 border-l-sky-600 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-lg sm:text-xl font-black text-slate-900" id="resStudentName">Nguyễn Tấn An</h3>
+              <span class="text-[10px] font-black px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-300" id="resStudentTeam">Tổ 1</span>
+            </div>
+            <p class="text-xs text-slate-600 font-medium mt-1" id="resStudentMeta">Chức vụ: Lớp trưởng • CCCD: 052206xxxxxx</p>
+          </div>
+
+          <div class="text-left sm:text-right">
+            <span class="text-[10px] uppercase font-black text-slate-500 block">Điểm rèn luyện tuần</span>
+            <span class="text-3xl font-black text-emerald-700" id="resStudentScore">100đ</span>
+            <span class="text-[10px] text-slate-600 font-bold block" id="resStudentRank">Xếp loại: Tốt (Thông tư 22)</span>
+          </div>
+        </div>
+
+        <!-- 3 KHỐI THÔNG TIN: CHỖ NGỒI, TRỰC NHẬT, QUỸ LỚP -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
+            <span class="font-black text-sky-800 uppercase flex items-center gap-1.5 text-[11px]">
+              <i class="fa-solid fa-chair"></i> Vị trí chỗ ngồi của con
+            </span>
+            <p class="text-sm font-black text-slate-900" id="resStudentSeat">Đang tải vị trí...</p>
+            <p class="text-[10px] text-slate-500 italic">* Phòng học 4 dãy chuẩn, bảng ở dưới cùng</p>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
+            <span class="font-black text-amber-800 uppercase flex items-center gap-1.5 text-[11px]">
+              <i class="fa-solid fa-broom"></i> Phân công trực nhật 7 ca
+            </span>
+            <p class="text-sm font-black text-slate-900" id="resStudentDutySession">Sáng Thứ 2 (Ca 1)</p>
+            <p class="text-[10px] text-emerald-800 font-bold" id="resStudentDutyStatus">
+              <i class="fa-solid fa-circle-check mr-1"></i>Đã nghiệm thu Đạt
+            </p>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
+            <span class="font-black text-emerald-800 uppercase flex items-center gap-1.5 text-[11px]">
+              <i class="fa-solid fa-vault"></i> Tình trạng quỹ lớp
+            </span>
+            <p class="text-sm font-black text-slate-900" id="resStudentFundStatus">Đã nộp đủ (100.000đ)</p>
+            <p class="text-[10px] text-slate-600 font-medium" id="resStudentFundDetail">Quỹ Học Kỳ 1 (2026 - 2027)</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- LỊCH SỬ NỀ NẾP & RÈN LUYỆN TRONG TUẦN -->
+      <div class="app-card rounded-3xl p-5 space-y-3">
+        <h4 class="text-xs font-black uppercase text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-sky-700"></i>
+          Nhật Ký Nề Nếp & Chuyên Cần Tuần Này Của Học Sinh
+        </h4>
+        <div class="space-y-2 text-xs" id="resStudentViolationsList"></div>
+      </div>
+
+      <!-- THỜI KHÓA BIỂU SỐ 3 -->
+      <div class="app-card rounded-3xl p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h4 class="text-xs font-black uppercase text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-calendar-days text-indigo-700"></i>
+            Thời Khóa Biểu Số 3 Của Lớp (Áp dụng từ 02/11/2026)
+          </h4>
+          <a href="tkb_10a12.png" download="TKB_10A12_So3.png" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs transition flex items-center gap-1 border border-slate-300">
+            <i class="fa-solid fa-download"></i> Tải ảnh TKB
+          </a>
+        </div>
+        <div class="p-3 rounded-2xl bg-slate-50 border border-slate-300 text-center">
+          <img id="resTkbImg" src="tkb_10a12.png" alt="TKB 10A12" class="max-w-full sm:max-w-md mx-auto rounded-xl shadow-xs border border-slate-300">
+        </div>
+      </div>
+
+      <!-- GÓC KỶ NIỆM & MEDIA LỚP 10A12 -->
+      <div class="app-card rounded-3xl p-5 space-y-3">
+        <h4 class="text-xs font-black uppercase text-purple-800 flex items-center gap-2">
+          <i class="fa-solid fa-photo-film"></i>
+          Hình Ảnh Hoạt Động & Khoảnh Khắc Tập Thể 10A12
+        </h4>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5" id="resClassMediaGrid"></div>
+      </div>
+
+    </div>
+
+    <!-- MẶC ĐỊNH KHI CHƯA TRA CỨU -->
+    <div id="defaultWelcomeCard" class="app-card rounded-3xl p-6 sm:p-8 text-center space-y-4">
+      <div class="w-16 h-16 rounded-2xl bg-sky-100 text-sky-800 flex items-center justify-center text-2xl mx-auto shadow-2xs border border-sky-300">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <div class="space-y-1">
+        <h3 class="text-base sm:text-lg font-black text-slate-900">Chào Mừng Quý Phụ Huynh & Học Sinh 10A12!</h3>
+        <p class="text-xs text-slate-600 font-medium max-w-lg mx-auto">
+          Cổng thông tin hỗ trợ cha mẹ đồng hành cùng con trong suốt năm học lớp 10 tại Trường THPT số 1 Quang Trung (Phân hiệu).
+        </p>
+      </div>
+      <div class="p-4 rounded-2xl bg-slate-50 border border-slate-300 max-w-md mx-auto text-xs text-slate-800 space-y-1.5 text-left font-medium">
+        <p class="font-bold text-slate-950"><i class="fa-solid fa-user-tie text-sky-700 mr-2"></i>Thầy Chủ Nhiệm: <b>ThS. Trần Dương Quốc Mẫn</b></p>
+        <p><i class="fa-solid fa-phone text-emerald-700 mr-2"></i>Số điện thoại / Zalo: <b>0383618849</b></p>
+        <p><i class="fa-solid fa-location-dot text-rose-700 mr-2"></i>Địa chỉ: Tây Sơn, Gia Lai</p>
+        <p class="text-[11px] text-slate-500 pt-1 border-t border-slate-200"><i class="fa-solid fa-shield-halved text-indigo-700 mr-1.5"></i>Hòm thư riêng tư học sinh: Được bảo mật 100% trong Sổ tay điện tử.</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="text-center text-[11px] text-slate-500 font-medium mt-8">
+    <p>© 2026 Lớp 10A12 (Khóa 58) • Trường THPT số 1 Quang Trung (Phân hiệu) • SỞ GD&ĐT GIA LAI</p>
+  </footer>
+
+  <!-- ==================== MODAL SAO KÊ QUỸ LỚP MINH BẠCH ==================== -->
+  <div id="statementModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-white max-w-2xl w-full p-5 sm:p-6 rounded-3xl border border-slate-300 max-h-[90vh] flex flex-col shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div>
+          <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-file-invoice-dollar text-emerald-600"></i>
+            Sao Kê Tài Chính & Quỹ Lớp 10A12 Minh Bạch
+          </h3>
+          <p class="text-[11px] text-slate-600 font-medium">Toàn bộ các khoản thu chi hoạt động tập thể đã được GVCN phê duyệt</p>
+        </div>
+        <button onclick="closeStatementModal()" class="text-slate-400 hover:text-slate-700 p-1 text-base"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- TỔNG QUAN TỒN QUỸ -->
+      <div class="grid grid-cols-3 gap-2 text-center text-xs">
+        <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300">
+          <span class="text-[10px] text-slate-600 block uppercase font-bold">Tổng thu</span>
+          <b class="text-emerald-800 text-sm font-black" id="modalFundIncome">0 đ</b>
+        </div>
+        <div class="p-2.5 rounded-xl bg-rose-50 border border-rose-300">
+          <span class="text-[10px] text-slate-600 block uppercase font-bold">Tổng chi</span>
+          <b class="text-rose-800 text-sm font-black" id="modalFundExpense">0 đ</b>
+        </div>
+        <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-300">
+          <span class="text-[10px] text-slate-600 block uppercase font-bold">Tồn két</span>
+          <b class="text-indigo-800 text-sm font-black" id="modalFundBalance">0 đ</b>
+        </div>
+      </div>
+
+      <!-- DANH SÁCH CHI TIẾT CÁC KHOẢN CHI THỰC TẾ -->
+      <div class="space-y-2 overflow-y-auto flex-1 pr-1 text-xs" id="modalExpenseList"></div>
+
+      <div class="pt-2 border-t border-slate-200">
+        <button onclick="closeStatementModal()" class="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-800 border border-slate-300 transition">Đóng Sao Kê</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCRIPT XỬ LÝ TRA CỨU & LOCAL ENGINE ==================== -->
+  <script>
+    const GAS_API_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1lTYoi_wIdFpd_jneRKW8TtzUDyrtKGdkfk6K0OGErPfyKsjlB9hfQ/exec";
+
+    function removeVietnameseTones(str) {
+      if (!str) return "";
+      str = str.toLowerCase();
+      str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+      str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+      str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+      str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+      str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+      str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+      str = str.replace(/đ/g, "d");
+      str = str.replace(/[^a-z0-9]/g, "");
+      return str.trim();
+    }
+
+    // Tải dữ liệu từ LocalStorage
+    let localStudents = JSON.parse(localStorage.getItem("10A12_STUDENTS_V9")) || [];
+    let localViolations = JSON.parse(localStorage.getItem("10A12_VIOLATIONS_V9")) || [];
+    let localCampaigns = JSON.parse(localStorage.getItem("10A12_CAMPAIGNS_V9")) || [];
+    let localPayments = JSON.parse(localStorage.getItem("10A12_PAYMENTS_V9")) || [];
+    let localCashbook = JSON.parse(localStorage.getItem("10A12_CASHBOOK_V9")) || [];
+    let localSeating = JSON.parse(localStorage.getItem("classroom_10A12_glass_v9")) || [];
+    let localDuty = JSON.parse(localStorage.getItem("10A12_DUTY_7SESSIONS")) || {};
+    let localMedia = JSON.parse(localStorage.getItem("10A12_CLASS_MEDIA")) || [];
+    let customTkbImg = localStorage.getItem("10A12_TKB_IMAGE") || "tkb_10a12.png";
+
+    // Xử lý Tra cứu học sinh
+    function handleLookupStudent(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      const rawQuery = document.getElementById("lookupInput").value.trim();
+      const cleanQuery = removeVietnameseTones(rawQuery);
+      const alertBox = document.getElementById("lookupAlertMsg");
+      const resultSec = document.getElementById("lookupResultSection");
+      const welcomeCard = document.getElementById("defaultWelcomeCard");
+
+      if (alertBox) alertBox.classList.add("hidden");
+      if (!cleanQuery) return;
+
+      // Tìm kiếm theo: Tên không dấu, Tên có dấu, Mã HS, Số CCCD
+      const matched = localStudents.find(s => {
+        const sCleanName = removeVietnameseTones(s.hoTen);
+        const sCode = (s.id || "").toLowerCase();
+        const sCCCD = (s.soCCCD || "").replace(/\s/g, "");
+        return sCleanName === cleanQuery || sCode === cleanQuery || sCCCD === cleanQuery || sCleanName.includes(cleanQuery);
+      });
+
+      if (!matched) {
+        if (alertBox) {
+          alertBox.innerText = `Không tìm thấy thông tin học sinh khớp với "${rawQuery}". Vui lòng kiểm tra lại họ tên, mã HS hoặc số CCCD!`;
+          alertBox.classList.remove("hidden");
+        }
+        if (resultSec) resultSec.classList.add("hidden");
+        if (welcomeCard) welcomeCard.classList.remove("hidden");
+        return;
+      }
+
+      // Hiển thị kết quả tra cứu
+      if (welcomeCard) welcomeCard.classList.add("hidden");
+      if (resultSec) resultSec.classList.remove("hidden");
+
+      document.getElementById("resStudentName").innerText = matched.hoTen;
+      document.getElementById("resStudentTeam").innerText = matched.to || "Tổ 1";
+      
+      const cccdText = matched.soCCCD ? `${matched.soCCCD}${matched.ngayCapCCCD ? ' (Cấp: ' + matched.ngayCapCCCD + ')' : ''}` : "Đang cập nhật";
+      document.getElementById("resStudentMeta").innerText = `Mã HS: ${matched.id} • Chức vụ: ${matched.chucVu || "Thành viên"} • CCCD: ${cccdText}`;
+
+      const score = Number(matched.diemThiDua) || 100;
+      const scoreEl = document.getElementById("resStudentScore");
+      scoreEl.innerText = `${score}đ`;
+      scoreEl.className = `text-3xl font-black ${score >= 90 ? 'text-emerald-700' : (score >= 70 ? 'text-sky-700' : 'text-amber-700')}`;
+      
+      const rankEl = document.getElementById("resStudentRank");
+      const rankText = score >= 90 ? "Tốt" : (score >= 70 ? "Khá" : (score >= 50 ? "Đạt" : "Chưa đạt"));
+      rankEl.innerText = `Xếp loại: ${rankText} (Thông tư 22)`;
+
+      // Vị trí chỗ ngồi (Bảo mật: Chỉ phụ huynh biết vị trí con)
+      let seatLocation = "Đang sắp xếp chỗ ngồi";
+      if (localSeating && localSeating.length > 0) {
+        localSeating.forEach((row, r) => {
+          row.forEach((cell, c) => {
+            if (cell && cell.name && matched.hoTen.includes(cell.name)) {
+              const dayNum = Math.floor(c / 2) + 1;
+              const banNum = 6 - r;
+              const side = (c % 2 === 0) ? "Ghế Trái" : "Ghế Phải";
+              seatLocation = `Dãy ${dayNum} • Bàn ${banNum} • ${side}`;
+            }
+          });
+        });
+      }
+      document.getElementById("resStudentSeat").innerText = seatLocation;
+
+      // Phân công trực nhật 7 ca
+      const sessionNames = {
+        "T2_SANG": "Sáng Thứ 2", "T2_CHIEU": "Chiều Thứ 2",
+        "T3_SANG": "Sáng Thứ 3", "T3_CHIEU": "Chiều Thứ 3",
+        "T4_SANG": "Sáng Thứ 4", "T5_SANG": "Sáng Thứ 5", "T6_SANG": "Sáng Thứ 6"
+      };
+      let dutyAssignedSession = "Chưa có ca trực tuần này";
+      let dutyStatusText = "Chưa diễn ra";
+      let dutyStatusClass = "text-slate-600";
+
+      for (let sKey in localDuty) {
+        const dutyObj = localDuty[sKey];
+        if (dutyObj && dutyObj.students && dutyObj.students.includes(matched.id)) {
+          dutyAssignedSession = sessionNames[sKey] || sKey;
+          if (dutyObj.status === "DAT") {
+            dutyStatusText = "Đã hoàn thành xuất sắc";
+            dutyStatusClass = "text-emerald-700";
+          } else if (dutyObj.status === "CHUA_DAT") {
+            dutyStatusText = "Cần hoàn thành ca trực bù";
+            dutyStatusClass = "text-rose-700";
+          }
+          break;
+        }
+      }
+      document.getElementById("resStudentDutySession").innerText = dutyAssignedSession;
+      const dutyStatusEl = document.getElementById("resStudentDutyStatus");
+      dutyStatusEl.className = `text-[10px] font-bold ${dutyStatusClass}`;
+      dutyStatusEl.innerHTML = `<i class="fa-solid fa-circle-info mr-1"></i>${dutyStatusText}`;
+
+      // Quỹ lớp
+      const curCampaign = localCampaigns[0] || { id: "KY1_100K", title: "Quỹ Lớp Học Kỳ 1", target: 100000 };
+      const payRecord = localPayments.find(p => p.studentId === matched.id && p.campaignId === curCampaign.id);
+      const isPaid = payRecord ? payRecord.isPaid : false;
+
+      const fundStatusEl = document.getElementById("resStudentFundStatus");
+      if (isPaid) {
+        fundStatusEl.innerHTML = `<span class="text-emerald-700 font-bold"><i class="fa-solid fa-check mr-1"></i>Đã đóng đủ (${Number(curCampaign.target).toLocaleString()}đ)</span>`;
+      } else {
+        fundStatusEl.innerHTML = `<span class="text-rose-700 font-bold"><i class="fa-solid fa-clock mr-1"></i>Chưa hoàn thành (${Number(curCampaign.target).toLocaleString()}đ)</span>`;
+      }
+      document.getElementById("resStudentFundDetail").innerText = curCampaign.title;
+
+      // Lỗi / Việc tốt rèn luyện
+      const personalViolations = localViolations.filter(v => v.studentId === matched.id);
+      const vioListEl = document.getElementById("resStudentViolationsList");
+      if (personalViolations.length === 0) {
+        vioListEl.innerHTML = `<p class="p-3 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold"><i class="fa-solid fa-circle-check mr-1.5 text-emerald-700"></i>Học sinh thực hiện nề nếp rất tốt, không có lỗi vi phạm trong tuần.</p>`;
+      } else {
+        vioListEl.innerHTML = personalViolations.map(v => `
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-300 flex items-center justify-between">
+            <div>
+              <b class="text-slate-900">${v.criteria}</b>
+              <span class="text-[10px] text-slate-500 font-medium block">${v.time} • ${v.note || ''}</span>
+            </div>
+            <span class="font-black text-xs ${v.points < 0 ? 'text-rose-700' : 'text-emerald-700'}">${v.points > 0 ? '+' : ''}${v.points}đ</span>
+          </div>
+        `).join("");
+      }
+
+      // TKB & Media
+      const tkbImgEl = document.getElementById("resTkbImg");
+      if (tkbImgEl) tkbImgEl.src = customTkbImg;
+
+      const mediaGridEl = document.getElementById("resClassMediaGrid");
+      if (mediaGridEl) {
+        if (localMedia.length === 0) {
+          mediaGridEl.innerHTML = `<p class="col-span-full text-slate-400 italic py-3 text-center">Chưa có hình ảnh hoạt động của lớp.</p>`;
+        } else {
+          mediaGridEl.innerHTML = localMedia.slice(0, 4).map(m => `
+            <div class="rounded-xl border border-slate-300 overflow-hidden bg-white shadow-2xs">
+              <img src="${m.imgData}" alt="${m.title}" class="w-full h-24 object-cover">
+              <p class="p-1.5 text-[10px] font-bold text-slate-900 truncate">${m.title}</p>
+            </div>
+          `).join("");
+        }
+      }
+
+      resultSec.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Modal Sao Kê Quỹ Lớp Minh Bạch
+    function openStatementModal() {
+      let income = 0;
+      localPayments.forEach(p => {
+        if (p.isPaid) income += Number(p.amountPaid || 100000);
+      });
+
+      let expense = 0;
+      localCashbook.forEach(tx => {
+        if ((tx.status || "DA_DUYET") === "DA_DUYET" && tx.type === "CHI") {
+          expense += Number(tx.amount || 0);
+        }
+      });
+
+      document.getElementById("modalFundIncome").innerText = `${income.toLocaleString()} đ`;
+      document.getElementById("modalFundExpense").innerText = `${expense.toLocaleString()} đ`;
+      document.getElementById("modalFundBalance").innerText = `${(income - expense).toLocaleString()} đ`;
+
+      const listEl = document.getElementById("modalExpenseList");
+      if (listEl) {
+        const approvedExpenses = localCashbook.filter(t => (t.status || "DA_DUYET") === "DA_DUYET");
+        if (approvedExpenses.length === 0) {
+          listEl.innerHTML = `<p class="text-slate-400 italic py-3 text-center">Chưa phát sinh phiếu chi nào.</p>`;
+        } else {
+          listEl.innerHTML = approvedExpenses.map(tx => `
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-300 flex items-center justify-between">
+              <div>
+                <b class="text-slate-900">${tx.category}</b>
+                <p class="text-[11px] text-slate-600 font-medium">${tx.note} <span class="text-slate-400">(${tx.time})</span></p>
+              </div>
+              <b class="text-sm font-black ${tx.type === 'CHI' ? 'text-rose-700' : 'text-emerald-700'} font-mono">
+                ${tx.type === 'CHI' ? '-' : '+'}${Number(tx.amount || 0).toLocaleString()}đ
+              </b>
+            </div>
+          `).join("");
+        }
+      }
+
+      document.getElementById("statementModal").classList.remove("hidden");
+    }
+
+    function closeStatementModal() {
+      document.getElementById("statementModal").classList.add("hidden");
+    }
+
+    // Tự động nhận diện đường dẫn (VD: tracuu.html?id=HS01 hoặc tracuu.html?code=052206...)
+    window.addEventListener("DOMContentLoaded", () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const codeParam = urlParams.get("code") || urlParams.get("id") || urlParams.get("name");
+      if (codeParam) {
+        const input = document.getElementById("lookupInput");
+        if (input) {
+          input.value = decodeURIComponent(codeParam);
+          handleLookupStudent();
+        }
+      }
+    });
+  </script>
+</body>
+</html>
