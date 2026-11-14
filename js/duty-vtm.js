@@ -5,32 +5,45 @@
 function renderTkbSubjectCell(val) {
   const text = String(val || "-").trim() || "-";
   if (text === "-" || text === "—") {
-    return `<td class="py-2.5 px-3 text-center text-slate-400">-</td>`;
+    return `<td class="py-2.5 px-3 text-center text-slate-400 font-medium">-</td>`;
   }
   const norm = typeof removeVietnameseTones === "function" ? removeVietnameseTones(text) : text.toLowerCase();
   const isGvcn = norm.includes("man");
-  return `<td class="py-2.5 px-3 text-center ${isGvcn ? "text-amber-700 font-black bg-amber-50/50" : "text-slate-800 font-bold"}">${escapeHtml(text)}</td>`;
+  return `<td class="py-2.5 px-3 text-center ${isGvcn ? "text-amber-700 font-black bg-amber-50/70" : "text-sky-900 font-bold"}">${escapeHtml(text)}</td>`;
 }
 
 function renderTkbRowsHtml(rows, periodColorClass) {
-  return rows.map(r => `
-    <tr class="border-b border-slate-100 hover:bg-slate-50 transition text-xs">
+  return (rows || []).map((r, idx) => `
+    <tr class="border-b border-slate-200 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/90"} hover:bg-sky-50/50 transition text-xs">
       <td class="py-2.5 px-3 text-center font-mono font-black ${periodColorClass}">${escapeHtml(r.period)}</td>
-      <td class="py-2.5 px-3 font-mono text-slate-500 text-[11px] whitespace-nowrap">${escapeHtml(r.time)}</td>
+      <td class="py-2.5 px-3 font-mono text-slate-600 text-[11px] whitespace-nowrap">${escapeHtml(r.time)}</td>
       ${["t2", "t3", "t4", "t5", "t6", "t7"].map(k => renderTkbSubjectCell(r[k])).join("")}
     </tr>
   `).join("");
 }
 
 function renderTkbSection() {
-  const activeTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : TKB_CONFIG_SO3;
+  const activeTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : (appState.tkbConfig || { morning: [], afternoon: [] });
+  const headerTitleEl = document.getElementById("tkbHeaderTitle");
+  if (headerTitleEl) {
+    const versionText = activeTkb.version || (activeTkb.effectiveDate ? `${activeTkb.versionLabel} (Từ ${activeTkb.effectiveDate})` : activeTkb.versionLabel);
+    const fullText = (typeof formatTkbHeaderTitleText === "function")
+      ? formatTkbHeaderTitleText(activeTkb)
+      : `Thời Khóa Biểu Lớp 10A12 • ${versionText}`;
+    headerTitleEl.innerText = fullText;
+    headerTitleEl.innerHTML = `<i class="fa-solid fa-calendar-days text-indigo-700"></i> ${escapeHtml(fullText)}`;
+  }
+
   const mBody = document.getElementById("tkbMorningTableBody");
   const aBody = document.getElementById("tkbAfternoonTableBody");
 
   if (mBody) mBody.innerHTML = renderTkbRowsHtml(activeTkb.morning || [], "text-sky-700");
   if (aBody) aBody.innerHTML = renderTkbRowsHtml(activeTkb.afternoon || [], "text-indigo-700");
 
-  const imgSrc = safeMediaSrc(appState.tkbCustomImage) || "tkb_10a12.png";
+  const preferredImg = (activeTkb && activeTkb.imageBase64 && String(activeTkb.imageBase64).startsWith("data:image"))
+    ? activeTkb.imageBase64
+    : appState.tkbCustomImage;
+  const imgSrc = safeMediaSrc(preferredImg) || "tkb_10a12.png";
   const imgEl = document.getElementById("tkbImageDisplay");
   const noteEl = document.getElementById("tkbImgFallbackNote");
   if (imgEl) {
@@ -78,26 +91,31 @@ async function handleUploadNewTkbImage(event) {
   if (!file) return;
 
   const badge = document.getElementById("tkbUpdatedBadge");
-  if (badge) badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang nén & đồng bộ ảnh TKB...`;
+  if (badge) badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang đọc & đồng bộ ảnh TKB...`;
 
   try {
     const compressed = await compressImageDataUrl(file, 1280, 0.78);
     appState.tkbCustomImage = compressed;
     appState.tkbUpdatedAt = new Date().toLocaleString("vi-VN");
+    try { localStorage.setItem("10A12_TKB_IMAGE", compressed); } catch (e) {}
 
-    const activeTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : null;
+    const activeTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : (appState.tkbConfig || {});
+    activeTkb.imageBase64 = compressed;
     const detectedVersion = detectTkbVersionFromFilename(file.name);
-    if (activeTkb && detectedVersion) {
+    if (detectedVersion) {
       activeTkb.versionLabel = detectedVersion;
+      activeTkb.version = activeTkb.effectiveDate ? `${detectedVersion} (Từ ${activeTkb.effectiveDate})` : detectedVersion;
     }
 
+    if (typeof purgeLegacyTkbCacheKeys === "function") purgeLegacyTkbCacheKeys();
     saveStateToLocal();
     renderTkbSection();
 
+    const cloudTkb = (typeof getCloudSafeTkbConfig === "function") ? getCloudSafeTkbConfig(activeTkb) : activeTkb;
     const cloudRes = await callApi("saveConfig", {
       tkbCustomImage: appState.tkbCustomImage,
       tkbUpdatedAt: appState.tkbUpdatedAt,
-      tkbConfigJson: JSON.stringify(activeTkb || TKB_CONFIG_SO3)
+      tkbConfigJson: JSON.stringify(cloudTkb)
     }, "POST");
 
     if (cloudRes && cloudRes.status === "success") {
@@ -124,54 +142,128 @@ async function handleUploadNewTkbImage(event) {
   }
 }
 
-function buildEditTkbGridRowsHtml(rows, sessionKey, sessionLabel) {
-  return (rows || []).map((r, idx) => `
-    <tr class="border-b border-slate-200 text-xs">
-      <td class="px-2 py-1.5 font-bold text-slate-700 whitespace-nowrap bg-slate-50">${escapeHtml(sessionLabel)} • T${escapeHtml(r.period)}</td>
-      ${["t2", "t3", "t4", "t5", "t6", "t7"].map(dayCol => `
-        <td class="p-1">
-          <input type="text" data-tkb-session="${sessionKey}" data-tkb-idx="${idx}" data-tkb-day="${dayCol}"
-            value="${escapeAttr((r[dayCol] && r[dayCol] !== "-") ? r[dayCol] : "")}"
-            placeholder="-"
-            class="w-full min-w-[88px] px-2 py-1 rounded-lg border border-slate-300 bg-white text-slate-900 text-[11px] font-medium focus:border-sky-500 focus:outline-none">
-        </td>
-      `).join("")}
-    </tr>
-  `).join("");
+let pendingModalTkbImageBase64 = "";
+
+async function handleModalTkbImagePick(event) {
+  const file = event && event.target && event.target.files ? event.target.files[0] : null;
+  if (!file) return;
+  const statusEl = document.getElementById("editTkbModalImageStatus");
+  try {
+    if (statusEl) statusEl.innerText = "Đang nén ảnh TKB...";
+    const compressed = await compressImageDataUrl(file, 1280, 0.78);
+    pendingModalTkbImageBase64 = compressed;
+    const detected = detectTkbVersionFromFilename(file.name);
+    const verEl = document.getElementById("editTkbVersionInput");
+    if (detected && verEl && !verEl.dataset.edited) {
+      verEl.value = detected;
+    }
+    if (statusEl) statusEl.innerText = `Đã chọn ảnh mới (${file.name}) • Sẽ lưu khi bấm Lưu & Đồng Bộ.`;
+  } catch (err) {
+    if (statusEl) statusEl.innerText = "Lỗi đọc ảnh: " + err.message;
+  }
 }
 
-function openEditTkbModal(fromUpload) {
-  if (appState.roleLevel !== "GVCN") {
-    alert("Chỉ GVCN mới có quyền cập nhật Số hiệu & Bảng TKB!");
-    return;
-  }
-  const modal = document.getElementById("editTkbModal");
-  if (!modal) return;
-  const activeTkb = getActiveTkbConfig();
+function clearEditTkbSession(sessionKey) {
+  const tbody = document.getElementById("editTkbScheduleBody");
+  if (!tbody || typeof tbody.querySelectorAll !== "function") return;
+  const inputs = tbody.querySelectorAll("input[data-session], input[data-tkb-session]");
+  inputs.forEach(inp => {
+    const ds = inp.dataset || {};
+    if ((ds.session || ds.tkbSession) === sessionKey) {
+      inp.value = "-";
+    }
+  });
+}
+
+function buildEditTkbGridRowsHtml(rows, sessionKey, sessionLabel) {
+  const isAfternoon = sessionKey === "afternoon";
+  const labelCellCls = isAfternoon
+    ? "bg-indigo-50 text-indigo-900 border-r border-indigo-200"
+    : "bg-sky-50 text-sky-900 border-r border-sky-200";
+  const focusCls = isAfternoon ? "focus:border-indigo-500" : "focus:border-sky-500";
+
+  return (rows || []).map((r, idx) => {
+    const periodNum = Number(r.period) || (idx + 1);
+    return `
+      <tr class="border-b border-slate-200 text-xs ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}" data-tkb-row-session="${sessionKey}">
+        <td class="px-2 py-1.5 font-bold whitespace-nowrap ${labelCellCls}">${escapeHtml(sessionLabel)} • T${escapeHtml(periodNum)}</td>
+        ${["t2", "t3", "t4", "t5", "t6", "t7"].map(dayCol => {
+          const inputId = `${sessionKey}_p${periodNum}_${dayCol}`;
+          const rawVal = String((r[dayCol] !== undefined && r[dayCol] !== null) ? r[dayCol] : "-").trim();
+          const cellVal = (!rawVal || rawVal === "—") ? "-" : rawVal;
+          return `
+            <td class="p-1">
+              <input type="text" id="${escapeAttr(inputId)}"
+                data-session="${escapeAttr(sessionKey)}"
+                data-tkb-session="${escapeAttr(sessionKey)}"
+                data-tkb-period="${escapeAttr(periodNum)}"
+                data-tkb-idx="${idx}"
+                data-tkb-day="${escapeAttr(dayCol)}"
+                value="${escapeAttr(cellVal)}"
+                placeholder="-"
+                onfocus="if(this.value==='-')this.value='';"
+                onblur="if(!this.value.trim())this.value='-';"
+                class="w-full min-w-[88px] px-2 py-1 rounded-lg border border-slate-300 bg-white text-slate-900 text-[11px] font-medium ${focusCls} focus:outline-none">
+            </td>
+          `;
+        }).join("")}
+      </tr>
+    `;
+  }).join("");
+}
+
+function populateTkbModal(fromUpload) {
+  pendingModalTkbImageBase64 = "";
+  const rawTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : (appState.tkbConfig || {});
+  const activeTkb = (typeof normalizeTkbConfig === "function") ? normalizeTkbConfig(rawTkb) : rawTkb;
+  if (typeof appState === "object" && appState) appState.tkbConfig = activeTkb;
+
   const verEl = document.getElementById("editTkbVersionInput");
   const dateEl = document.getElementById("editTkbDateInput");
+  const imgInputEl = document.getElementById("editTkbModalImageInput");
+  const imgStatusEl = document.getElementById("editTkbModalImageStatus");
   const bannerHint = document.getElementById("editTkbUploadNotice");
   const tbody = document.getElementById("editTkbScheduleBody");
 
-  if (verEl) verEl.value = activeTkb.versionLabel || "Số 4";
+  if (verEl) {
+    if (verEl.dataset) delete verEl.dataset.edited;
+    verEl.value = activeTkb.versionLabel || "Số 4";
+  }
   if (dateEl) dateEl.value = activeTkb.effectiveDate || "";
+  if (imgInputEl) imgInputEl.value = "";
+  if (imgStatusEl) {
+    const hasB64 = (activeTkb.imageBase64 && activeTkb.imageBase64.startsWith("data:image")) || (appState.tkbCustomImage && String(appState.tkbCustomImage).startsWith("data:image"));
+    imgStatusEl.innerText = hasB64 ? "Đang gắn ảnh TKB tùy chỉnh (Base64)" : "Đang dùng ảnh mặc định / chưa chọn ảnh mới";
+  }
   if (bannerHint) {
     if (fromUpload) bannerHint.classList.remove("hidden");
     else bannerHint.classList.add("hidden");
   }
   if (tbody) {
-    tbody.innerHTML = buildEditTkbGridRowsHtml(activeTkb.morning, "morning", "Sáng") +
-      buildEditTkbGridRowsHtml(activeTkb.afternoon, "afternoon", "Chiều");
+    tbody.innerHTML = buildEditTkbGridRowsHtml(activeTkb.morning || [], "morning", "Sáng") +
+      buildEditTkbGridRowsHtml(activeTkb.afternoon || [], "afternoon", "Chiều");
   }
+  return activeTkb;
+}
+
+function openEditTkbModal(fromUpload) {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ GVCN mới có quyền sửa nội dung Thời khóa biểu!");
+    return;
+  }
+  const modal = document.getElementById("editTkbModal");
+  if (!modal) return;
+  populateTkbModal(fromUpload);
   modal.classList.remove("hidden");
 }
 
 function closeEditTkbModal() {
+  pendingModalTkbImageBase64 = "";
   const modal = document.getElementById("editTkbModal");
   if (modal) modal.classList.add("hidden");
 }
 
-async function saveTkbConfigFromModal() {
+async function saveTkbConfigChanges() {
   if (appState.roleLevel !== "GVCN") return;
   const verInput = document.getElementById("editTkbVersionInput");
   const dateInput = document.getElementById("editTkbDateInput");
@@ -181,43 +273,93 @@ async function saveTkbConfigFromModal() {
     return;
   }
   if (/^\d+$/.test(nextVer)) nextVer = `Số ${nextVer}`;
+  const vShort = nextVer.replace(/\s*\([^)]*\)\s*$/, "").split(/\s*-\s*Từ/i)[0].trim() || nextVer;
   const nextDate = dateInput ? String(dateInput.value || "").trim() : "";
+  const fullVer = nextDate ? `${vShort} (Từ ${nextDate})` : nextVer;
 
-  const activeTkb = normalizeTkbConfig(getActiveTkbConfig());
-  activeTkb.versionLabel = nextVer;
+  const activeTkb = (typeof normalizeTkbConfig === "function") ? normalizeTkbConfig(getActiveTkbConfig()) : { ...getActiveTkbConfig() };
+  activeTkb.versionLabel = vShort;
   activeTkb.effectiveDate = nextDate;
+  activeTkb.version = fullVer;
+
+  const hasNewModalImg = Boolean(pendingModalTkbImageBase64);
+  if (hasNewModalImg) {
+    appState.tkbCustomImage = pendingModalTkbImageBase64;
+    activeTkb.imageBase64 = pendingModalTkbImageBase64;
+    try { localStorage.setItem("10A12_TKB_IMAGE", pendingModalTkbImageBase64); } catch (e) {}
+  } else if (appState.tkbCustomImage && String(appState.tkbCustomImage).startsWith("data:image")) {
+    activeTkb.imageBase64 = String(appState.tkbCustomImage);
+  }
 
   const tbody = document.getElementById("editTkbScheduleBody");
-  if (tbody) {
-    const inputs = tbody.querySelectorAll("input[data-tkb-session]");
+  const inputs = (tbody && typeof tbody.querySelectorAll === "function")
+    ? Array.from(tbody.querySelectorAll("input[data-session], input[data-tkb-session]"))
+    : [];
+
+  if (inputs.length > 0) {
     inputs.forEach(inp => {
-      const sess = inp.dataset.tkbSession;
-      const idx = parseInt(inp.dataset.tkbIdx, 10);
-      const dayCol = inp.dataset.tkbDay;
-      if (activeTkb[sess] && activeTkb[sess][idx] && dayCol) {
-        activeTkb[sess][idx][dayCol] = String(inp.value || "").trim() || "-";
+      const ds = inp.dataset || {};
+      const sess = ds.session || ds.tkbSession;
+      let idx = parseInt(ds.tkbIdx, 10);
+      if (Number.isNaN(idx) && ds.tkbPeriod) idx = parseInt(ds.tkbPeriod, 10) - 1;
+      const dayCol = ds.tkbDay || ds.day;
+      if (activeTkb[sess] && idx >= 0 && activeTkb[sess][idx] && dayCol) {
+        const cleaned = String(inp.value || "").trim();
+        activeTkb[sess][idx][dayCol] = (!cleaned || cleaned === "—") ? "-" : cleaned;
       }
+    });
+  } else {
+    ["morning", "afternoon"].forEach(sess => {
+      (activeTkb[sess] || []).forEach(row => {
+        ["t2", "t3", "t4", "t5", "t6", "t7"].forEach(dayCol => {
+          const inp = document.getElementById(`${sess}_p${row.period}_${dayCol}`);
+          if (inp) {
+            const cleaned = String(inp.value || "").trim();
+            row[dayCol] = (!cleaned || cleaned === "—") ? "-" : cleaned;
+          }
+        });
+      });
     });
   }
 
   appState.tkbConfig = activeTkb;
   appState.tkbUpdatedAt = new Date().toLocaleString("vi-VN");
+  if (typeof purgeLegacyTkbCacheKeys === "function") purgeLegacyTkbCacheKeys();
+  try {
+    localStorage.setItem("10A12_TKB_CONFIG", JSON.stringify(appState.tkbConfig));
+  } catch (e) {
+    try {
+      const compact = (typeof getCloudSafeTkbConfig === "function") ? getCloudSafeTkbConfig(appState.tkbConfig) : appState.tkbConfig;
+      localStorage.setItem("10A12_TKB_CONFIG", JSON.stringify(compact));
+    } catch (e2) {}
+  }
   saveStateToLocal();
   renderTkbSection();
   if (typeof renderOverviewDashboard === "function") renderOverviewDashboard();
   if (typeof updateLiveDashboardEngine === "function") updateLiveDashboardEngine();
+  if (typeof updateSuggestedSubjectByTkb === "function") updateSuggestedSubjectByTkb();
   closeEditTkbModal();
 
-  const cloudRes = await callApi("saveConfig", {
-    tkbConfigJson: JSON.stringify(activeTkb),
+  const cloudTkb = (typeof getCloudSafeTkbConfig === "function") ? getCloudSafeTkbConfig(activeTkb) : activeTkb;
+  const payload = {
+    tkbConfigJson: JSON.stringify(cloudTkb),
     tkbUpdatedAt: appState.tkbUpdatedAt
-  }, "POST");
+  };
+  if (hasNewModalImg) {
+    payload.tkbCustomImage = appState.tkbCustomImage;
+  }
+
+  const cloudRes = await callApi("saveConfig", payload, "POST");
 
   if (cloudRes && cloudRes.status === "success") {
-    alert(`Đã lưu Thời khóa biểu ${activeTkb.versionLabel} và đồng bộ toàn hệ thống (tiêu đề trên, Sổ đầu bài & Cổng tra cứu)!`);
+    alert(`Đã lưu Thời khóa biểu ${activeTkb.version} và đồng bộ toàn hệ thống!`);
   } else {
-    alert(`Đã cập nhật Thời khóa biểu ${activeTkb.versionLabel} trên giao diện (chờ đồng bộ Google Sheets).`);
+    alert(`Đã cập nhật Thời khóa biểu ${activeTkb.version} trên giao diện (chờ đồng bộ Google Sheets).`);
   }
+}
+
+function saveTkbConfigFromModal() {
+  return saveTkbConfigChanges();
 }
 
 function openZoomTkbModal() {
@@ -241,7 +383,31 @@ function downloadCurrentTkbImage() {
   a.click();
 }
 
+// ==================== PHÂN HỆ TRỰC NHẬT 7 CA & ĐÁNH GIÁ CHI TIẾT TỪNG HỌC SINH ====================
+const DUTY_REMEDY_PRESETS = [
+  "Trực nhật bù 15 phút đầu giờ buổi học kế tiếp",
+  "Tổng vệ sinh lớp học & hành lang cuối tuần",
+  "Nhắc nhở, rút kinh nghiệm trong tiết Sinh hoạt lớp",
+  "Trực bổ sung thêm 01 ca cùng tổ khác",
+  "Báo cáo GVCN phối hợp gia đình nhắc nhở"
+];
+
+function ensureDutyEvaluationState() {
+  if (!appState.dutyAssignments || typeof appState.dutyAssignments !== "object") {
+    appState.dutyAssignments = {};
+  }
+  if (!Array.isArray(appState.dutyRemediationLogs)) {
+    appState.dutyRemediationLogs = safeJsonParse(localStorage.getItem("10A12_DUTY_REMEDIATION"), []);
+  }
+}
+
+function getStudentDutyEvalRecord(sessionData, studentId) {
+  if (!sessionData || !sessionData.studentEvaluations) return { status: "CHUA_CHAM", reason: "", remedy: "", resolved: false };
+  return sessionData.studentEvaluations[studentId] || { status: "CHUA_CHAM", reason: "", remedy: "", resolved: false };
+}
+
 function render7DutySection() {
+  ensureDutyEvaluationState();
   const container = document.getElementById("weekly7DutyGrid");
   if (!container) return;
 
@@ -255,48 +421,81 @@ function render7DutySection() {
     { key: "T6_SANG", name: "Sáng Thứ 6", time: "06:30 - 06:45 & Tổng vệ sinh" }
   ];
 
-  const isLaborLeader = (appState.roleLevel === "GVCN") || (appState.roleLevel === "LABOR");
+  const isLaborLeader = canManageDuty();
 
   container.innerHTML = sessions.map(sess => {
-    const data = appState.dutyAssignments[sess.key] || { students: [], status: "CHUA_DANH_GIA", note: "" };
+    const data = appState.dutyAssignments[sess.key] || { students: [], status: "CHUA_DANH_GIA", note: "", studentEvaluations: {} };
     const isDat = data.status === "DAT";
     const isChuaDat = data.status === "CHUA_DAT";
 
-    return `
-      <div class="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2.5">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-          <div>
-            <h4 class="font-black text-xs text-slate-800 uppercase">${sess.name}</h4>
-            <span class="text-[9.5px] text-slate-400 block">${sess.time}</span>
-          </div>
-          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${isDat ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : (isChuaDat ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-600')}">
-            ${isDat ? 'Đạt' : (isChuaDat ? 'Trực bù' : 'Chưa trực')}
-          </span>
-        </div>
+    const stList = Array.isArray(data.students) ? data.students : [];
+    const goodCount = stList.filter(id => getStudentDutyEvalRecord(data, id).status === "TOT").length;
+    const poorCount = stList.filter(id => getStudentDutyEvalRecord(data, id).status === "CHUA_DAT").length;
 
-        <div class="space-y-1.5 min-h-[50px]">
-          <span class="text-[10px] text-slate-400 font-bold uppercase block">Học sinh trực nhật:</span>
-          ${data.students.length === 0 ? `
-            <p class="text-[11px] text-slate-400 italic">Chưa phân công học sinh.</p>
-          ` : `
-            <div class="flex flex-wrap gap-1">
-              ${data.students.map(stId => {
-                const s = appState.students.find(x => x.id === stId);
-                return `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-bold border border-slate-200">${escapeHtml(s ? s.hoTen : stId)}</span>`;
-              }).join("")}
+    return `
+      <div class="p-3.5 rounded-2xl bg-white border ${poorCount > 0 ? 'border-rose-300 bg-rose-50/10' : (goodCount > 0 && goodCount === stList.length && stList.length > 0 ? 'border-emerald-300 bg-emerald-50/10' : 'border-slate-200')} shadow-xs space-y-2.5 flex flex-col justify-between">
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div>
+              <h4 class="font-black text-xs text-slate-800 uppercase">${sess.name}</h4>
+              <span class="text-[9.5px] text-slate-400 block">${sess.time}</span>
             </div>
-          `}
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${isDat ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : (isChuaDat ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-600')}">
+              ${isDat ? 'Đạt' : (isChuaDat ? 'Trực bù' : 'Chưa trực')}
+            </span>
+          </div>
+
+          <div class="space-y-1.5 min-h-[58px]">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] text-slate-400 font-bold uppercase">Học sinh trực nhật (${stList.length}):</span>
+              ${stList.length > 0 && (goodCount > 0 || poorCount > 0) ? `
+                <span class="text-[9.5px] font-bold">
+                  <span class="text-emerald-700">${goodCount} tốt</span> • <span class="text-rose-600">${poorCount} chưa đạt</span>
+                </span>
+              ` : ''}
+            </div>
+            ${stList.length === 0 ? `
+              <p class="text-[11px] text-slate-400 italic">Chưa phân công học sinh.</p>
+            ` : `
+              <div class="flex flex-wrap gap-1.5">
+                ${stList.map(stId => {
+                  const s = appState.students.find(x => x.id === stId);
+                  const stName = s ? s.hoTen : stId;
+                  const ev = getStudentDutyEvalRecord(data, stId);
+                  let chipCls = "bg-slate-100 text-slate-800 border-slate-200";
+                  let iconHtml = "";
+                  if (ev.status === "TOT") {
+                    chipCls = "bg-emerald-50 text-emerald-800 border-emerald-300";
+                    iconHtml = `<i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>`;
+                  } else if (ev.status === "CHUA_DAT") {
+                    chipCls = "bg-rose-50 text-rose-800 border-rose-300";
+                    iconHtml = `<i class="fa-solid fa-circle-exclamation text-rose-600 mr-1"></i>`;
+                  }
+                  return `
+                    <span ${isLaborLeader ? `onclick="openStudentDutyEvalModal('${sess.key}')"` : ''}
+                      title="${ev.status === 'CHUA_DAT' ? `Chưa đạt: ${escapeAttr(ev.reason || '')} -> Hướng giải quyết: ${escapeAttr(ev.remedy || '')}` : (ev.status === 'TOT' ? 'Thực hiện tốt ca trực' : 'Bấm để đánh giá từng bạn')}"
+                      class="px-2 py-0.5 rounded-md text-[10px] font-bold border ${chipCls} ${isLaborLeader ? 'cursor-pointer hover:opacity-80' : ''} inline-flex items-center">
+                      ${iconHtml}${escapeHtml(stName)}
+                    </span>
+                  `;
+                }).join("")}
+              </div>
+            `}
+          </div>
         </div>
 
         ${isLaborLeader ? `
-          <div class="pt-2 border-t border-slate-100 flex items-center gap-1.5">
-            <button onclick="openAssignDutyModal('${sess.key}')" class="flex-1 py-1 px-2 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 text-[10px] font-bold border border-sky-200">
-              <i class="fa-solid fa-user-plus mr-1"></i> Phân công
+          <div class="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
+            <button onclick="openAssignDutyModal('${sess.key}')" class="py-1 px-2 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 text-[10px] font-bold border border-sky-200">
+              <i class="fa-solid fa-user-plus mr-0.5"></i> Phân công
             </button>
-            <button onclick="submitDutyEvaluation('${sess.key}', 'DAT')" class="py-1 px-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold border border-emerald-200" title="Đánh giá Đạt">
+            <button onclick="openStudentDutyEvalModal('${sess.key}')" class="flex-1 py-1 px-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-[10px] font-black shadow-2xs">
+              <i class="fa-solid fa-list-check mr-0.5"></i> Chấm từng bạn
+            </button>
+            <button onclick="submitDutyEvaluation('${sess.key}', 'DAT')" class="py-1 px-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold border border-emerald-200" title="Đánh giá cả ca Đạt">
               <i class="fa-solid fa-check"></i>
             </button>
-            <button onclick="submitDutyEvaluation('${sess.key}', 'CHUA_DAT')" class="py-1 px-2 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[10px] font-bold border border-rose-200" title="Đánh giá Chưa đạt (Trực bù)">
+            <button onclick="submitDutyEvaluation('${sess.key}', 'CHUA_DAT')" class="py-1 px-2 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[10px] font-bold border border-rose-200" title="Đánh giá cả ca Chưa đạt">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
@@ -305,7 +504,310 @@ function render7DutySection() {
     `;
   }).join("");
 
+  renderDutyRemediationTracker();
   renderLaborVolunteerList();
+}
+
+// ==================== MODAL CHẤM CHI TIẾT TỪNG HỌC SINH TRỰC NHẬT & HƯỚNG GIẢI QUYẾT ====================
+let currentEvaluatingDutySessionKey = "T2_SANG";
+
+function ensureStudentDutyEvalModal() {
+  if (document.getElementById("studentDutyEvalModal")) return;
+  const html = `
+    <div id="studentDutyEvalModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 hidden" onclick="if(event.target===this) closeStudentDutyEvalModal()">
+      <div class="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[92vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div>
+            <h3 class="font-black text-slate-900 text-sm sm:text-base flex items-center gap-2">
+              <i class="fa-solid fa-clipboard-check text-indigo-600"></i>
+              Đánh Giá Trực Nhật Từng Học Sinh — <span id="dutyEvalModalSessionLabel" class="text-indigo-700">Sáng Thứ 2</span>
+            </h3>
+            <p class="text-[11px] text-slate-500">Lớp phó Lao động & GVCN đánh dấu mức độ hoàn thành và đề xuất hướng giải quyết cụ thể</p>
+          </div>
+          <button onclick="closeStudentDutyEvalModal()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div id="dutyEvalStudentRowsContainer" class="overflow-y-auto py-3.5 space-y-3 pr-1 text-xs flex-1"></div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+          <button type="button" onclick="markAllDutyStudentsGoodInModal()" class="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs transition">
+            <i class="fa-solid fa-check-double mr-1"></i> Đánh dấu tất cả Thực hiện tốt
+          </button>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="closeStudentDutyEvalModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">
+              Hủy
+            </button>
+            <button type="button" onclick="saveStudentDutyEvaluations()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-floppy-disk"></i> Lưu Đánh Giá & Hướng Giải Quyết
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+
+function openStudentDutyEvalModal(sessionKey) {
+  if (!canManageDuty()) {
+    alert("Chỉ GVCN hoặc Lớp phó Lao động mới có quyền đánh giá trực nhật!");
+    return;
+  }
+  ensureDutyEvaluationState();
+  currentEvaluatingDutySessionKey = sessionKey;
+
+  const data = appState.dutyAssignments[sessionKey] || { students: [], status: "CHUA_DANH_GIA", note: "", studentEvaluations: {} };
+  const stList = Array.isArray(data.students) ? data.students : [];
+  if (stList.length === 0) {
+    alert("Ca trực này chưa phân công học sinh nào. Vui lòng bấm 'Phân công' để chọn học sinh trước!");
+    openAssignDutyModal(sessionKey);
+    return;
+  }
+
+  ensureStudentDutyEvalModal();
+  const titleEl = document.getElementById("dutyEvalModalSessionLabel");
+  if (titleEl) titleEl.innerText = getSessionLabel(sessionKey);
+
+  const container = document.getElementById("dutyEvalStudentRowsContainer");
+  if (container) {
+    container.innerHTML = stList.map(stId => {
+      const st = appState.students.find(x => x.id === stId) || { id: stId, hoTen: stId, to: "" };
+      const ev = getStudentDutyEvalRecord(data, stId);
+      const isPoor = ev.status === "CHUA_DAT";
+      return `
+        <div class="p-3.5 rounded-2xl border ${isPoor ? 'border-rose-300 bg-rose-50/30' : (ev.status === 'TOT' ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200 bg-slate-50/60')} space-y-2.5" id="duty_eval_card_${escapeAttr(stId)}">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <b class="text-slate-900 text-sm">${escapeHtml(st.hoTen)}</b>
+              <span class="text-[11px] text-slate-500 ml-1.5">(${escapeHtml(st.id)} • ${escapeHtml(st.to)})</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <label class="px-3 py-1.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 cursor-pointer flex items-center gap-1.5 font-bold text-emerald-800">
+                <input type="radio" name="duty_status_${escapeAttr(stId)}" value="TOT" ${ev.status === "TOT" ? "checked" : ""} onchange="toggleDutyRemedyBox('${escapeAttr(stId)}', false)" class="accent-emerald-600">
+                <span>🟢 Thực hiện tốt</span>
+              </label>
+              <label class="px-3 py-1.5 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 cursor-pointer flex items-center gap-1.5 font-bold text-rose-800">
+                <input type="radio" name="duty_status_${escapeAttr(stId)}" value="CHUA_DAT" ${isPoor ? "checked" : ""} onchange="toggleDutyRemedyBox('${escapeAttr(stId)}', true)" class="accent-rose-600">
+                <span>🔴 Chưa hoàn thành</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="duty_remedy_box_${escapeAttr(stId)}" class="${isPoor ? '' : 'hidden'} pt-2 border-t border-rose-200/70 space-y-2">
+            <div>
+              <label class="block text-[11px] font-bold text-rose-900 mb-1">Lý do chưa hoàn thành trực nhật:</label>
+              <input type="text" id="duty_reason_${escapeAttr(stId)}" value="${escapeAttr(ev.reason || '')}" placeholder="Ví dụ: Đi trực muộn, chưa lau bảng, quên đổ rác cuối buổi..."
+                class="w-full px-3 py-1.5 rounded-xl border border-rose-200 bg-white text-slate-800 font-medium focus:outline-none focus:border-rose-500">
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-indigo-900 mb-1">Hướng giải quyết / Biện pháp khắc phục:</label>
+              <div class="flex gap-1.5 flex-col sm:flex-row">
+                <select onchange="if(this.value) document.getElementById('duty_remedy_${escapeAttr(stId)}').value = this.value" class="px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/50 text-indigo-900 font-bold text-[11px] focus:outline-none">
+                  <option value="">-- Chọn nhanh hướng giải quyết --</option>
+                  ${DUTY_REMEDY_PRESETS.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("")}
+                </select>
+                <input type="text" id="duty_remedy_${escapeAttr(stId)}" value="${escapeAttr(ev.remedy || DUTY_REMEDY_PRESETS[0])}" placeholder="Nhập hướng giải quyết..."
+                  class="flex-1 px-3 py-1.5 rounded-xl border border-indigo-200 bg-white text-slate-800 font-bold focus:outline-none focus:border-indigo-500">
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("studentDutyEvalModal").classList.remove("hidden");
+}
+
+function toggleDutyRemedyBox(stId, show) {
+  const box = document.getElementById(`duty_remedy_box_${stId}`);
+  const card = document.getElementById(`duty_eval_card_${stId}`);
+  if (box) {
+    if (show) box.classList.remove("hidden");
+    else box.classList.add("hidden");
+  }
+  if (card) {
+    card.className = show
+      ? "p-3.5 rounded-2xl border border-rose-300 bg-rose-50/30 space-y-2.5"
+      : "p-3.5 rounded-2xl border border-emerald-300 bg-emerald-50/30 space-y-2.5";
+  }
+}
+
+function markAllDutyStudentsGoodInModal() {
+  const sessionKey = currentEvaluatingDutySessionKey;
+  const data = appState.dutyAssignments[sessionKey];
+  if (!data || !Array.isArray(data.students)) return;
+  data.students.forEach(stId => {
+    const radio = document.querySelector(`input[name="duty_status_${stId}"][value="TOT"]`);
+    if (radio) radio.checked = true;
+    toggleDutyRemedyBox(stId, false);
+  });
+}
+
+function closeStudentDutyEvalModal() {
+  const m = document.getElementById("studentDutyEvalModal");
+  if (m) m.classList.add("hidden");
+}
+
+async function saveStudentDutyEvaluations() {
+  if (!canManageDuty()) return;
+  ensureDutyEvaluationState();
+
+  const sessionKey = currentEvaluatingDutySessionKey;
+  if (!appState.dutyAssignments[sessionKey]) {
+    appState.dutyAssignments[sessionKey] = { students: [], status: "CHUA_DANH_GIA", note: "", studentEvaluations: {} };
+  }
+  const data = appState.dutyAssignments[sessionKey];
+  if (!data.studentEvaluations) data.studentEvaluations = {};
+
+  const recorderName = appState.currentUser ? appState.currentUser.fullName : "Lớp phó Lao động";
+  const dateStr = formatDateVN();
+  const sessLabel = getSessionLabel(sessionKey);
+
+  let anyPoor = false;
+  let allGood = data.students.length > 0;
+
+  data.students.forEach(stId => {
+    const checked = document.querySelector(`input[name="duty_status_${stId}"]:checked`);
+    const status = checked ? checked.value : "CHUA_CHAM";
+    const reasonEl = document.getElementById(`duty_reason_${stId}`);
+    const remedyEl = document.getElementById(`duty_remedy_${stId}`);
+    const reason = reasonEl ? reasonEl.value.trim() : "";
+    const remedy = remedyEl ? remedyEl.value.trim() : "";
+
+    data.studentEvaluations[stId] = {
+      status,
+      reason,
+      remedy,
+      evaluatedAt: dateStr,
+      evaluatedBy: recorderName,
+      resolved: false
+    };
+
+    if (status === "CHUA_DAT") {
+      anyPoor = true;
+      allGood = false;
+      const st = appState.students.find(x => x.id === stId);
+      const logId = `REM_${appState.selectedWeek}_${sessionKey}_${stId}`;
+      const existingIdx = appState.dutyRemediationLogs.findIndex(x => x.id === logId);
+      const logEntry = {
+        id: logId,
+        week: appState.selectedWeek,
+        date: dateStr,
+        sessionKey,
+        sessionLabel: sessLabel,
+        studentId: stId,
+        studentName: st ? st.hoTen : stId,
+        team: st ? st.to : "",
+        reason: reason || "Chưa hoàn thành nhiệm vụ trực nhật",
+        remedy: remedy || DUTY_REMEDY_PRESETS[0],
+        recorder: recorderName,
+        resolved: false
+      };
+      if (existingIdx >= 0) appState.dutyRemediationLogs[existingIdx] = logEntry;
+      else appState.dutyRemediationLogs.unshift(logEntry);
+    } else {
+      if (status !== "TOT") allGood = false;
+      const logId = `REM_${appState.selectedWeek}_${sessionKey}_${stId}`;
+      appState.dutyRemediationLogs = appState.dutyRemediationLogs.filter(x => x.id !== logId);
+    }
+  });
+
+  if (anyPoor) {
+    data.status = "CHUA_DAT";
+  } else if (allGood) {
+    data.status = "DAT";
+  }
+
+  localStorage.setItem("10A12_DUTY_REMEDIATION", JSON.stringify(appState.dutyRemediationLogs));
+  saveStateToLocal();
+  render7DutySection();
+  closeStudentDutyEvalModal();
+
+  await callApi("saveDutyState", {
+    dutyAssignments: appState.dutyAssignments,
+    volunteerLaborList: appState.volunteerLaborList
+  }, "POST");
+
+  alert(`Đã lưu kết quả đánh giá trực nhật từng học sinh cho ca ${sessLabel}!`);
+}
+
+async function toggleDutyRemediationResolved(logId) {
+  if (!canManageDuty()) return;
+  ensureDutyEvaluationState();
+  const item = appState.dutyRemediationLogs.find(x => x.id === logId);
+  if (!item) return;
+
+  item.resolved = !item.resolved;
+  item.resolvedAt = item.resolved ? formatDateVN() : "";
+  localStorage.setItem("10A12_DUTY_REMEDIATION", JSON.stringify(appState.dutyRemediationLogs));
+  saveStateToLocal();
+  renderDutyRemediationTracker();
+}
+
+function renderDutyRemediationTracker() {
+  const grid = document.getElementById("weekly7DutyGrid");
+  if (!grid || !grid.parentElement) return;
+
+  let trackerBox = document.getElementById("dutyRemediationTrackerBox");
+  if (!trackerBox) {
+    trackerBox = document.createElement("div");
+    trackerBox.id = "dutyRemediationTrackerBox";
+    trackerBox.className = "mt-4 p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3";
+    grid.parentElement.insertBefore(trackerBox, grid.nextSibling);
+  }
+
+  const logs = (appState.dutyRemediationLogs || []).filter(x => !x.week || Number(x.week) === Number(appState.selectedWeek));
+  const isLeader = canManageDuty();
+
+  if (logs.length === 0) {
+    trackerBox.innerHTML = `
+      <div class="flex items-center justify-between text-xs">
+        <span class="font-black text-slate-800 uppercase flex items-center gap-1.5">
+          <i class="fa-solid fa-clipboard-list text-emerald-600"></i>
+          Theo Dõi Khắc Phục & Hướng Giải Quyết Trực Nhật (Tuần ${appState.selectedWeek})
+        </span>
+        <span class="text-emerald-700 font-bold"><i class="fa-solid fa-circle-check mr-1"></i>Các tổ trực nhật tốt, chưa có tồn đọng</span>
+      </div>
+    `;
+    return;
+  }
+
+  trackerBox.innerHTML = `
+    <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 flex-wrap gap-2">
+      <div>
+        <h4 class="text-xs sm:text-sm font-black text-slate-900 uppercase flex items-center gap-1.5">
+          <i class="fa-solid fa-screwdriver-wrench text-rose-600"></i>
+          Danh Sách Học Sinh Chưa Hoàn Thành Trực Nhật & Hướng Giải Quyết (${logs.length} em)
+        </h4>
+        <p class="text-[11px] text-slate-500">Lớp phó Lao động theo dõi và xác nhận khi học sinh hoàn thành trực bù / khắc phục</p>
+      </div>
+    </div>
+    <div class="space-y-2">
+      ${logs.map(item => `
+        <div class="p-3 rounded-2xl border ${item.resolved ? 'bg-emerald-50/40 border-emerald-200' : 'bg-rose-50/40 border-rose-200'} flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="px-2 py-0.5 rounded-md font-black text-[10px] ${item.resolved ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}">
+                ${item.resolved ? '✓ Đã khắc phục xong' : '⏳ Cần giải quyết'}
+              </span>
+              <b class="text-slate-900">${escapeHtml(item.studentName)}</b>
+              <span class="text-slate-500 font-bold">(${escapeHtml(item.team)} • Ca: ${escapeHtml(item.sessionLabel)})</span>
+            </div>
+            <p class="text-slate-700"><b>Lý do:</b> ${escapeHtml(item.reason)}</p>
+            <p class="text-indigo-900 font-bold"><i class="fa-solid fa-arrow-right mr-1 text-indigo-600"></i>Hướng giải quyết: ${escapeHtml(item.remedy)}</p>
+          </div>
+          ${isLeader ? `
+            <button type="button" onclick="toggleDutyRemediationResolved('${escapeAttr(item.id)}')" class="px-3 py-1.5 rounded-xl ${item.resolved ? 'bg-slate-200 text-slate-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} font-bold text-[11px] transition shrink-0 self-start sm:self-center">
+              ${item.resolved ? 'Hoàn tác' : '✓ Xác nhận đã trực bù'}
+            </button>
+          ` : ''}
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 let currentAssigningSessionKey = "T2_SANG";
@@ -359,7 +861,7 @@ async function saveDutyAssignmentForSession() {
   document.querySelectorAll(".duty-assign-cb:checked").forEach(cb => selected.push(cb.value));
 
   if (!appState.dutyAssignments[currentAssigningSessionKey]) {
-    appState.dutyAssignments[currentAssigningSessionKey] = { students: [], status: "CHUA_DANH_GIA", note: "" };
+    appState.dutyAssignments[currentAssigningSessionKey] = { students: [], status: "CHUA_DANH_GIA", note: "", studentEvaluations: {} };
   }
   appState.dutyAssignments[currentAssigningSessionKey].students = selected;
 
@@ -376,7 +878,7 @@ async function submitDutyEvaluation(sessionKey, status) {
     return;
   }
   if (!appState.dutyAssignments[sessionKey]) {
-    appState.dutyAssignments[sessionKey] = { students: [], status: "CHUA_DANH_GIA", note: "" };
+    appState.dutyAssignments[sessionKey] = { students: [], status: "CHUA_DANH_GIA", note: "", studentEvaluations: {} };
   }
 
   let note = "";

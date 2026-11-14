@@ -652,10 +652,22 @@ function renderPeriodCards() {
   `).join("");
 }
 
+function getDefaultLogSessionByTime(dateObj) {
+  const now = dateObj || new Date();
+  if (appState.currentSessionKey === "T2_CHIEU") return "BUOI_2";
+  if (appState.currentSessionKey === "T3_CHIEU") return "BUOI_3";
+  if (now.getHours() >= 12) {
+    const d = now.getDay();
+    if (d === 1) return "BUOI_2";
+    if (d === 2) return "BUOI_3";
+    return "BUOI_CHIEU";
+  }
+  return "BUOI_1";
+}
+
 function getLogContextFromModal() {
   const sessionSel = document.getElementById("logSessionSelect");
   const dateInput = document.getElementById("logDateInput");
-  const sessionCode = sessionSel ? sessionSel.value : "BUOI_1";
 
   let dateObj = new Date();
   if (dateInput && dateInput.value) {
@@ -665,9 +677,19 @@ function getLogContextFromModal() {
     }
   }
 
+  let sessionCode = sessionSel ? sessionSel.value : getDefaultLogSessionByTime(new Date());
+  if (sessionSel && sessionCode === "BUOI_1" && !(sessionSel.dataset && sessionSel.dataset.userChanged)) {
+    const now = new Date();
+    if (now.getHours() >= 12) {
+      sessionCode = getDefaultLogSessionByTime(dateInput && dateInput.value ? new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), now.getHours(), now.getMinutes()) : now);
+    }
+  }
+
   let isMorning = true;
-  let dayKey = `t${dateObj.getDay() + 1}`;
-  let sessionLabel = "Buổi Sáng";
+  const dayIdx = dateObj.getDay();
+  const validDayNum = (dayIdx >= 1 && dayIdx <= 6) ? (dayIdx + 1) : 2;
+  let dayKey = `t${validDayNum}`;
+  let sessionLabel = `Sáng Thứ ${validDayNum}`;
 
   if (sessionCode === "BUOI_2") {
     isMorning = false;
@@ -677,11 +699,12 @@ function getLogContextFromModal() {
     isMorning = false;
     dayKey = "t3";
     sessionLabel = "Buổi Chiều Thứ 3";
+  } else if (sessionCode === "BUOI_CHIEU" || String(sessionCode).includes("CHIEU")) {
+    isMorning = false;
+    sessionLabel = `Buổi Chiều Thứ ${validDayNum}`;
   } else {
     isMorning = true;
-    const dayIdx = dateObj.getDay();
-    dayKey = (dayIdx >= 1 && dayIdx <= 3) ? `t${dayIdx + 1}` : "t2";
-    sessionLabel = dayIdx === 2 ? "Sáng Thứ 3" : (dayIdx === 3 ? "Sáng Thứ 4" : "Sáng Thứ 2");
+    sessionLabel = `Sáng Thứ ${validDayNum}`;
   }
 
   return { sessionCode, sessionLabel, isMorning, dayKey, dateObj, dateIso: getLocalDateKey(dateObj), dateVN: formatDateVN(dateObj) };
@@ -701,14 +724,14 @@ function openClassSessionLogModal() {
     `).join("");
   }
 
+  const now = new Date();
   const dateInput = document.getElementById("logDateInput");
-  if (dateInput && !dateInput.value) dateInput.value = getLocalDateKey(new Date());
+  if (dateInput && !dateInput.value) dateInput.value = getLocalDateKey(now);
 
   const sessionSel = document.getElementById("logSessionSelect");
   if (sessionSel) {
-    if (appState.currentSessionKey === "T2_CHIEU") sessionSel.value = "BUOI_2";
-    else if (appState.currentSessionKey === "T3_CHIEU") sessionSel.value = "BUOI_3";
-    else sessionSel.value = "BUOI_1";
+    if (sessionSel.dataset) delete sessionSel.dataset.userChanged;
+    sessionSel.value = getDefaultLogSessionByTime(now);
   }
 
   updateSuggestedSubjectByTkb();
@@ -721,18 +744,29 @@ function closeClassSessionLogModal() {
   if (modal) modal.classList.add("hidden");
 }
 
+function onLogSessionSelectChange(selEl) {
+  if (selEl && selEl.dataset) selEl.dataset.userChanged = "1";
+  updateSuggestedSubjectByTkb();
+}
+
+function resolveTkbSubjectName(pNum, ctx) {
+  const activeTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : (appState.tkbConfig || { morning: [], afternoon: [] });
+  const periods = ctx.isMorning ? (activeTkb.morning || []) : (activeTkb.afternoon || []);
+  const matchP = periods.find(p => p.period === pNum);
+  const subjectName = (matchP && matchP[ctx.dayKey] && matchP[ctx.dayKey] !== "-" && matchP[ctx.dayKey] !== "—")
+    ? matchP[ctx.dayKey]
+    : "Tiết chính khóa";
+  return { activeTkb, subjectName };
+}
+
 function updateSuggestedSubjectByTkb() {
   const periodVal = document.getElementById("logPeriodSelect") ? document.getElementById("logPeriodSelect").value : "Tiết 1";
   const pNum = parseInt(periodVal.replace(/\D/g, ""), 10) || 1;
   const ctx = getLogContextFromModal();
-
-  const activeTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : TKB_CONFIG_SO3;
-  const periods = ctx.isMorning ? activeTkb.morning : activeTkb.afternoon;
-  const matchP = periods.find(p => p.period === pNum);
-  const subj = (matchP && matchP[ctx.dayKey] && matchP[ctx.dayKey] !== "-" && matchP[ctx.dayKey] !== "—") ? matchP[ctx.dayKey] : "Tiết chính khóa";
+  const { activeTkb, subjectName } = resolveTkbSubjectName(pNum, ctx);
 
   const textEl = document.getElementById("suggestedSubjectText");
-  if (textEl) textEl.innerText = `${subj} (${ctx.sessionLabel} • TKB ${activeTkb.versionLabel || "hiện hành"})`;
+  if (textEl) textEl.innerText = `${subjectName} (${ctx.sessionLabel} • TKB ${activeTkb.versionLabel || "hiện hành"})`;
 }
 
 async function submitClassSessionLogSimple() {
@@ -749,11 +783,8 @@ async function submitClassSessionLogSimple() {
   const vioReason = document.getElementById("logViolationReasonSelect").value;
 
   const ctx = getLogContextFromModal();
-  const activeTkb = (typeof getActiveTkbConfig === "function") ? getActiveTkbConfig() : TKB_CONFIG_SO3;
-  const periods = ctx.isMorning ? activeTkb.morning : activeTkb.afternoon;
   const pNum = parseInt(period.replace(/\D/g, ""), 10) || 1;
-  const matchP = periods.find(p => p.period === pNum);
-  const subjectName = (matchP && matchP[ctx.dayKey] && matchP[ctx.dayKey] !== "-" && matchP[ctx.dayKey] !== "—") ? matchP[ctx.dayKey] : "Tiết chính khóa";
+  const { subjectName } = resolveTkbSubjectName(pNum, ctx);
 
   const logWeek = getWeekNumberFromDate(ctx.dateObj);
   const senderName = appState.currentUser ? appState.currentUser.fullName : "Ban Cán sự";

@@ -1,11 +1,11 @@
 /**
  * ============================================================================
  * SERVICE WORKER ĐIỀU HÀNH PWA SỔ TAY CHỦ NHIỆM 10A12 (K58-QT)
- * Phiên bản: 10a12-pwa-v17 (TKB Dynamic Sync, Docx Spacious Layout, Dãy 1..4 & Thu Ủng Hộ GVCN)
+ * Phiên bản: 10a12-pwa-v20 (Cơ Chế TKB Động 1 Nguồn appState.tkbConfig, Gỡ Fallback TKB Số 3 & Đồng Bộ Buổi Chiều Sạch)
  * ============================================================================
  */
 
-const CACHE_NAME = "10a12-pwa-v17";
+const CACHE_NAME = "10a12-pwa-v20";
 
 const STATIC_ASSETS = [
   "./",
