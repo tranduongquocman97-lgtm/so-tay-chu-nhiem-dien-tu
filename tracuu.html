@@ -689,7 +689,7 @@
 
     const DEFAULT_SEATING = [
       [{ name: "Ngô Trí Dũng" }, { name: "" }, { name: "Phan Tấn Sang" }, { name: "Vũ Thanh Khiêm" }, { name: "Trần Minh Quân" }, { name: "" }, { name: "" }, { name: "Nguyễn Xuân Đông" }],
-      [{ name: "Trần Nguyễn Gia Bảo" }, { name: "Huỳnh Minh Nhựt" }, { name: "Dương Thành Danh" }, { name: "Nguyễn Quốc Phong" }, { name: "Bùi Thị Bảo Trâm" }, { name: "Lê Thảo Quyên" }, { name: "Võ Minh Trí" }, { name: "Đặng Bảo Sương" }],
+      [{ name: "Trần Nguyễn Gia Bảo" }, { name: "Huỳnh Minh Nhựt" }, { name: "Dương Thành Danh" }, { name: "Nguyễn Quốc Phong" }, { name: "Bùi Thị Bảo Trâm" }, { name: "Lê Thảo Quyên" }, { name: "" }, { name: "Đặng Bảo Sương" }],
       [{ name: "Đặng Thị Hiền Trân" }, { name: "Bùi Huỳnh Như Ý" }, { name: "Nguyễn Thị Thanh Trà" }, { name: "Phan Thị Hà My" }, { name: "Võ Hiền Đức" }, { name: "Lê Thành Huy" }, { name: "Nguyễn Tấn An" }, { name: "Trần Hiếu Trung" }],
       [{ name: "Nguyễn My Su" }, { name: "Đặng Nhã Trân" }, { name: "Trần Thảo Ngân" }, { name: "Võ Thị Kim Nhung" }, { name: "Đinh Văn Khoa" }, { name: "Nguyễn Thái Hoàng" }, { name: "Huỳnh Minh Đức" }, { name: "Nguyễn Văn Nhuận" }],
       [{ name: "Ngô Văn Vỹ" }, { name: "Đỗ Huy Vũ" }, { name: "Nguyễn Bảo Khôi" }, { name: "Trương Hà Quý" }, { name: "Bùi Trần Khánh Nhi" }, { name: "Trần Anh Thư" }, { name: "Lê Thị Trúc Phượng" }, { name: "Phan Ngọc Thuỳ" }],
@@ -755,6 +755,7 @@
         if (json && json.status === "success") {
           if (Array.isArray(json.campaigns) && json.campaigns.length > 0) portalState.campaigns = json.campaigns;
           if (Array.isArray(json.cashbook)) portalState.cashbook = json.cashbook;
+          if (Array.isArray(json.classMedia)) portalState.classMedia = json.classMedia;
           if (json.config) {
             if (json.config.customTicker) portalState.customTicker = json.config.customTicker;
             if (json.config.schoolYearStartDate) {
@@ -1343,7 +1344,8 @@
 
     // ==================== KHỐI 5: RENDER RÈN LUYỆN & THI ĐUA TUẦN ====================
     function renderStudentDisciplineBlock(st) {
-      const score = Number(st.diemThiDua) || 100;
+      const rawSc = Number(st.diemThiDua);
+      const score = (Number.isFinite(rawSc) && Math.abs(rawSc) <= 2000) ? Math.round(rawSc) : 100;
       const box = document.getElementById("stDisciplineSummaryBox");
       const icon = document.getElementById("stCardColorIcon");
       const label = document.getElementById("stCardColorLabel");
@@ -1667,21 +1669,90 @@
       const grid = document.getElementById("publicMediaGrid");
       const media = portalState.classMedia || [];
       if (grid) {
-        if (media.length === 0) {
-          grid.innerHTML = `<p class="col-span-full text-center text-xs text-slate-400 italic py-8">Ban Văn Thể Mỹ lớp 10A12 đang cập nhật hình ảnh hoạt động mới.</p>`;
-        } else {
-          grid.innerHTML = media.map(m => `
-            <div class="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 shadow-xs">
-              <img src="${escapeHtml(m.imgData)}" alt="${escapeHtml(m.title)}" class="w-full h-40 object-cover">
-              <div class="p-2.5">
-                <b class="text-xs text-slate-800 block truncate">${escapeHtml(m.title)}</b>
-                <span class="text-[10px] text-slate-400">${escapeHtml(m.date || "")}</span>
-              </div>
+        const uploadBarHtml = `
+          <div class="col-span-full p-3 rounded-2xl bg-purple-50 border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs mb-1">
+            <div>
+              <b class="text-purple-950 block"><i class="fa-brands fa-google-drive text-emerald-600 mr-1"></i>Kho Ảnh & Video Kỷ Niệm Lớp 10A12 (Google Drive)</b>
+              <span class="text-[11px] text-slate-600">Học sinh & Phụ huynh có thể góp ảnh hoạt động lớp trực tiếp lên Drive chung</span>
             </div>
-          `).join("");
+            <div class="flex items-center gap-2 shrink-0">
+              <label class="px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-black cursor-pointer transition flex items-center gap-1.5">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+                <span>Góp Ảnh Lên Drive</span>
+                <input type="file" accept="image/*" multiple class="hidden" onchange="handlePublicStudentMediaUpload(event)">
+              </label>
+              <a href="https://drive.google.com/drive/folders/1fzwD2dIQ42dXCBPYXG2HYG-wFpgV5wlz" target="_blank" rel="noopener" class="px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-800 font-bold">
+                Mở Drive
+              </a>
+            </div>
+          </div>
+        `;
+
+        if (media.length === 0) {
+          grid.innerHTML = uploadBarHtml + `<p class="col-span-full text-center text-xs text-slate-400 italic py-8">Ban Văn Thể Mỹ lớp 10A12 đang cập nhật hình ảnh hoạt động mới.</p>`;
+        } else {
+          grid.innerHTML = uploadBarHtml + media.map(m => {
+            const src = m.viewUrl || m.imgData || "";
+            const isVideo = String(m.mediaType || "").toUpperCase() === "VIDEO" || src.includes("/preview") || src.startsWith("data:video");
+            return `
+              <div class="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 shadow-xs">
+                <div class="h-40 bg-slate-900 flex items-center justify-center overflow-hidden">
+                  ${isVideo
+                    ? `<iframe src="${escapeHtml(src)}" class="w-full h-full border-0" allow="autoplay; fullscreen"></iframe>`
+                    : `<img src="${escapeHtml(src)}" alt="${escapeHtml(m.title)}" class="w-full h-full object-cover">`
+                  }
+                </div>
+                <div class="p-2.5">
+                  <b class="text-xs text-slate-800 block truncate">${escapeHtml(m.title)}</b>
+                  <span class="text-[10px] text-slate-400">${escapeHtml(m.date || "")}${m.uploader ? ` • ${escapeHtml(m.uploader)}` : ""}</span>
+                </div>
+              </div>
+            `;
+          }).join("");
         }
       }
       document.getElementById("classGalleryModal").classList.remove("hidden");
+    }
+
+    async function handlePublicStudentMediaUpload(event) {
+      const files = event && event.target && event.target.files ? Array.from(event.target.files) : [];
+      if (files.length === 0) return;
+      const uploader = portalState.selectedStudent ? `${portalState.selectedStudent.hoTen} (${portalState.selectedStudent.to})` : "Phụ huynh / Học sinh 10A12";
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const dataUrl = await new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = ev => resolve(ev.target.result);
+            r.onerror = () => reject(new Error("Lỗi đọc ảnh"));
+            r.readAsDataURL(f);
+          });
+          const res = await fetch(GAS_API_URL, {
+            method: "POST",
+            redirect: "follow",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "uploadPublicClassMedia",
+              title: `Kỷ niệm 10A12 • ${uploader}`,
+              fileName: f.name,
+              mimeType: f.type || "image/jpeg",
+              mediaType: "IMAGE",
+              base64Data: dataUrl,
+              uploaderName: uploader
+            })
+          });
+          const json = await res.json();
+          if (json && json.status === "success" && Array.isArray(json.classMedia)) {
+            portalState.classMedia = json.classMedia;
+          }
+        }
+        openClassGalleryModal();
+        alert(`✅ Đã tải thành công ${files.length} ảnh lên thư mục Google Drive chung của lớp 10A12!`);
+      } catch (err) {
+        alert("Không thể tải ảnh lên Google Drive: " + err.message);
+      } finally {
+        event.target.value = "";
+      }
     }
 
     function closeClassGalleryModal() {

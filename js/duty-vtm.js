@@ -1062,11 +1062,17 @@ async function approveVolunteerLabor(id) {
   alert(`Đã duyệt khen thưởng +10đ rèn luyện cho học sinh [${item.studentName}]!`);
 }
 
+const CLASS_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1fzwD2dIQ42dXCBPYXG2HYG-wFpgV5wlz";
+
 function canManageVtm() {
   if (appState.roleLevel === "GVCN") return true;
   if (!appState.allowStudentLeaderEdit) return false;
   const r = String((appState.currentUser && appState.currentUser.role) || "").toLowerCase();
   return (appState.roleLevel === "VTM") || r.includes("lớp trưởng") || r.includes("bí thư");
+}
+
+function canContributeMedia() {
+  return Boolean(appState.currentUser);
 }
 
 function renderVtmSection() {
@@ -1092,25 +1098,76 @@ function renderVtmSection() {
     }
   }
 
+  // Hiển thị thanh công cụ Google Drive & Tạo Video Kỷ Niệm tự động ngay trên Kho Media
+  if (mediaGrid && mediaGrid.parentElement) {
+    let aiBar = document.getElementById("vtmDriveMemoryActionBar");
+    if (!aiBar) {
+      aiBar = document.createElement("div");
+      aiBar.id = "vtmDriveMemoryActionBar";
+      aiBar.className = "p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-sky-50 border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs mb-3";
+      mediaGrid.parentElement.insertBefore(aiBar, mediaGrid);
+    }
+
+    aiBar.innerHTML = `
+      <div class="space-y-0.5">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="px-2 py-0.5 rounded-md bg-purple-700 text-white font-black text-[10px] uppercase"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Google Photos Memories</span>
+          <b class="text-slate-900">Kho Ảnh & Video Kỷ Niệm Lớp 10A12 (Lưu trên Google Drive)</b>
+        </div>
+        <p class="text-[11px] text-slate-600">Học sinh & Cán sự đăng ảnh lên thư mục Drive chung; hệ thống tự động ghép thành Video Kỷ Niệm có nhạc nền!</p>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap shrink-0">
+        <button type="button" onclick="openUploadMediaModal()" class="px-3.5 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 text-white font-black text-xs shadow-2xs transition flex items-center gap-1.5">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Đăng Ảnh Lên Drive
+        </button>
+        <button type="button" onclick="openAiMemoryVideoCreatorModal()" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs shadow-sm transition flex items-center gap-1.5">
+          <i class="fa-solid fa-film"></i> Tạo Video Kỷ Niệm Tự Động
+        </button>
+        <a href="${CLASS_DRIVE_FOLDER_URL}" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs transition flex items-center gap-1.5">
+          <i class="fa-brands fa-google-drive text-emerald-600"></i> Mở Thư Mục Drive
+        </a>
+      </div>
+    `;
+  }
+
   if (mediaGrid) {
     if (appState.classMedia.length === 0) {
-      mediaGrid.innerHTML = `<p class="col-span-full text-xs text-slate-400 italic py-4 text-center">Chưa có hình ảnh/clip kỷ niệm. Hãy đăng tải khoảnh khắc đẹp của lớp!</p>`;
+      mediaGrid.innerHTML = `<p class="col-span-full text-xs text-slate-400 italic py-4 text-center">Chưa có hình ảnh/video kỷ niệm. Hãy đăng tải khoảnh khắc đẹp của lớp lên Google Drive!</p>`;
     } else {
       mediaGrid.innerHTML = appState.classMedia.map(m => {
-        const imgUrl = safeMediaSrc(m.imgData);
+        const mediaUrl = safeMediaSrc(m.viewUrl || m.imgData);
+        const isVideo = String(m.mediaType || "").toUpperCase() === "VIDEO" || String(mediaUrl).includes("/preview") || String(mediaUrl).startsWith("data:video");
         return `
-          <div class="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-xs group">
-            <div class="h-32 bg-slate-100 overflow-hidden relative">
-              ${imgUrl ? `<img src="${escapeAttr(imgUrl)}" alt="${escapeAttr(m.title)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">` : `<div class="w-full h-full flex items-center justify-center text-slate-400 text-xs">Ảnh không hợp lệ</div>`}
+          <div class="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-xs group flex flex-col justify-between">
+            <div class="h-40 bg-slate-900 overflow-hidden relative flex items-center justify-center">
+              ${isVideo ? (
+                String(mediaUrl).includes("drive.google.com")
+                  ? `<iframe src="${escapeAttr(mediaUrl)}" class="w-full h-full border-0" allow="autoplay; fullscreen"></iframe>`
+                  : `<video src="${escapeAttr(mediaUrl)}" controls class="w-full h-full object-cover"></video>`
+              ) : (
+                mediaUrl
+                  ? `<img src="${escapeAttr(mediaUrl)}" alt="${escapeAttr(m.title)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">`
+                  : `<div class="w-full h-full flex items-center justify-center text-slate-400 text-xs">Media lớp 10A12</div>`
+              )}
+              <span class="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase ${isVideo ? 'bg-purple-600 text-white' : 'bg-slate-900/75 text-white'}">
+                ${isVideo ? '🎬 Video Kỷ Niệm' : '📷 Ảnh Drive'}
+              </span>
               ${isVtmLeader ? `
-                <button onclick="deleteClassMedia('${escapeAttr(m.id)}')" class="absolute top-2 right-2 w-6 h-6 rounded-full bg-slate-900/70 text-white text-[10px] flex items-center justify-center hover:bg-rose-600">
+                <button onclick="deleteClassMedia('${escapeAttr(m.id)}', '${escapeAttr(m.driveFileId || '')}')" class="absolute top-2 right-2 w-6 h-6 rounded-full bg-slate-900/80 text-white text-[10px] flex items-center justify-center hover:bg-rose-600">
                   <i class="fa-solid fa-xmark"></i>
                 </button>
               ` : ''}
             </div>
-            <div class="p-2.5 space-y-1">
-              <h5 class="text-xs font-black text-slate-800 truncate">${escapeHtml(m.title)}</h5>
-              <span class="text-[9.5px] text-slate-400 block">${escapeHtml(m.date)}</span>
+            <div class="p-2.5 space-y-1 flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <h5 class="text-xs font-black text-slate-800 truncate">${escapeHtml(m.title)}</h5>
+                <span class="text-[9.5px] text-slate-400 block truncate">${escapeHtml(m.date || '')}${m.uploader ? ` • ${escapeHtml(m.uploader)}` : ''}</span>
+              </div>
+              ${m.downloadUrl ? `
+                <a href="${escapeAttr(m.downloadUrl)}" target="_blank" rel="noopener" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-sky-100 text-sky-700 font-bold text-[10px] shrink-0" title="Tải về từ Google Drive">
+                  <i class="fa-solid fa-download"></i>
+                </a>
+              ` : ''}
             </div>
           </div>
         `;
@@ -1178,59 +1235,504 @@ async function deleteVtmEvent(id) {
 }
 
 function openUploadMediaModal() {
-  if (!canManageVtm()) {
-    alert("Chỉ GVCN hoặc Lớp phó Văn Thể Mỹ mới có quyền đăng ảnh kỷ niệm!");
+  if (!canContributeMedia()) {
+    alert("Vui lòng đăng nhập để đăng ảnh kỷ niệm!");
     return;
   }
-  document.getElementById("uploadMediaModal").classList.remove("hidden");
+  const modal = document.getElementById("uploadMediaModal");
+  const fileInput = document.getElementById("mediaFileInput");
+  if (fileInput) {
+    fileInput.setAttribute("multiple", "multiple");
+    fileInput.setAttribute("accept", "image/*,video/*");
+  }
+  if (modal) modal.classList.remove("hidden");
 }
+
 function closeUploadMediaModal() {
-  document.getElementById("uploadMediaModal").classList.add("hidden");
+  const modal = document.getElementById("uploadMediaModal");
+  if (modal) modal.classList.add("hidden");
 }
 
 async function submitUploadMediaItem() {
-  if (!canManageVtm()) {
-    alert("Không có quyền tải ảnh lên Kho Media!");
+  if (!canContributeMedia()) {
+    alert("Vui lòng đăng nhập để tải ảnh lên Kho Media!");
     return;
   }
   const titleInput = document.getElementById("mediaTitleInput");
-  const title = titleInput.value.trim();
+  const baseTitle = (titleInput ? titleInput.value.trim() : "") || "Khoảnh khắc 10A12";
   const fileInput = document.getElementById("mediaFileInput");
 
-  if (!fileInput.files || fileInput.files.length === 0) {
-    alert("Vui lòng chọn tệp ảnh!");
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    alert("Vui lòng chọn ít nhất 01 tệp ảnh!");
     return;
   }
 
+  const files = Array.from(fileInput.files);
+  const uploaderName = appState.currentUser ? appState.currentUser.fullName : "Thành viên 10A12";
+  const uploadedDataUrls = [];
+
   try {
-    const compressedData = await compressImageDataUrl(fileInput.files[0], 960, 0.72);
-    appState.classMedia.unshift({
-      id: `MED_${Date.now()}`,
-      title: title || "Khoảnh khắc 10A12",
-      imgData: compressedData,
-      date: formatDateVN()
-    });
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const itemTitle = files.length > 1 ? `${baseTitle} (${i + 1}/${files.length})` : baseTitle;
+      const isVid = String(f.type || "").startsWith("video/");
+      let dataUrl = "";
+      if (isVid) {
+        dataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = ev => res(ev.target.result);
+          r.onerror = () => rej(new Error("Lỗi đọc video"));
+          r.readAsDataURL(f);
+        });
+      } else {
+        dataUrl = await compressImageDataUrl(f, 1280, 0.8);
+        uploadedDataUrls.push(dataUrl);
+      }
+
+      const cloudRes = await callApi("uploadClassMediaToDrive", {
+        title: itemTitle,
+        fileName: f.name,
+        mimeType: f.type || (isVid ? "video/mp4" : "image/jpeg"),
+        mediaType: isVid ? "VIDEO" : "IMAGE",
+        base64Data: dataUrl,
+        uploaderName
+      }, "POST");
+
+      if (cloudRes && cloudRes.status === "success" && cloudRes.item) {
+        if (Array.isArray(cloudRes.classMedia)) {
+          appState.classMedia = cloudRes.classMedia;
+        } else {
+          appState.classMedia.unshift(cloudRes.item);
+        }
+      } else {
+        appState.classMedia.unshift({
+          id: `MED_${Date.now()}_${i}`,
+          title: itemTitle,
+          mediaType: isVid ? "VIDEO" : "IMAGE",
+          imgData: dataUrl,
+          date: formatDateVN(),
+          uploader: uploaderName
+        });
+      }
+    }
+
     saveStateToLocal();
     renderVtmSection();
     closeUploadMediaModal();
-    titleInput.value = "";
+    if (titleInput) titleInput.value = "";
     fileInput.value = "";
-    await callApi("saveVtmMediaState", { vtmEvents: appState.vtmEvents, classMedia: appState.classMedia }, "POST");
-    alert("Đã thêm và đồng bộ ảnh vào Kho Media Kỷ niệm của lớp!");
+
+    if (uploadedDataUrls.length >= 2) {
+      if (confirm(`Đã lưu ${files.length} ảnh lên thư mục Google Drive lớp 10A12! Bạn có muốn hệ thống TỰ ĐỘNG GHÉP ${uploadedDataUrls.length} ảnh này thành Video Kỷ Niệm có nhạc nền ngay không?`)) {
+        openAiMemoryVideoCreatorModal(uploadedDataUrls, baseTitle);
+        return;
+      }
+    } else {
+      alert(`Đã lưu thành công ${files.length} tệp lên thư mục Google Drive của lớp 10A12!`);
+    }
   } catch (err) {
-    alert("Không thể xử lý ảnh: " + err.message);
+    alert("Không thể tải media lên Google Drive: " + err.message);
   }
 }
 
-async function deleteClassMedia(id) {
+async function deleteClassMedia(id, driveFileId) {
   if (!canManageVtm()) {
     alert("Không có quyền xóa ảnh Kho Media!");
     return;
   }
-  if (confirm("Xóa bức ảnh này khỏi Kho Media lớp?")) {
+  if (confirm("Xóa tệp media này khỏi Kho Media và thư mục Google Drive lớp?")) {
     appState.classMedia = appState.classMedia.filter(x => x.id !== id);
     saveStateToLocal();
     renderVtmSection();
-    await callApi("saveVtmMediaState", { vtmEvents: appState.vtmEvents, classMedia: appState.classMedia }, "POST");
+    await callApi("deleteClassMediaFromDrive", { id, driveFileId }, "POST");
+  }
+}
+
+// ==================== BỘ MÁY TỰ ĐỘNG TẠO VIDEO KỶ NIỆM GIỐNG GOOGLE PHOTOS ====================
+let aiMemorySelectedImages = []; // Array of dataURLs / image URLs
+let aiMemoryGeneratedVideoBlob = null;
+let aiMemoryGeneratedVideoUrl = "";
+
+function ensureAiMemoryVideoModal() {
+  if (document.getElementById("aiMemoryVideoModal")) return;
+  const html = `
+    <div id="aiMemoryVideoModal" class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 hidden" onclick="if(event.target===this) closeAiMemoryVideoModal()">
+      <div class="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[93vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-xs">
+              <i class="fa-solid fa-film"></i>
+            </div>
+            <div>
+              <h3 class="font-black text-slate-900 text-sm sm:text-base">Tự Động Tạo Video Kỷ Niệm (AI Memories)</h3>
+              <p class="text-[11px] text-slate-500">Tự động ghép ảnh + hiệu ứng chuyển cảnh + nhạc nền và lưu thẳng lên Google Drive lớp</p>
+            </div>
+          </div>
+          <button onclick="closeAiMemoryVideoModal()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="overflow-y-auto py-3.5 space-y-3.5 text-xs flex-1 pr-1">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">1. Tiêu đề Video Kỷ Niệm:</label>
+              <input type="text" id="aiMemoryTitleInput" value="Kỷ Niệm Đẹp Lớp 10A12 • K58-QT"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-purple-600">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">2. Chọn nhiều ảnh từ máy để ghép:</label>
+              <input type="file" id="aiMemoryFilesInput" accept="image/*" multiple onchange="handleAiMemoryPhotosSelected(event)"
+                class="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-700 font-medium">
+            </div>
+          </div>
+
+          <div id="aiMemoryPreviewThumbs" class="grid grid-cols-4 sm:grid-cols-6 gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-200 min-h-[76px]">
+            <p class="col-span-full text-center text-slate-400 italic py-4">Chọn từ 2 đến 15 bức ảnh để bắt đầu tạo video tự động...</p>
+          </div>
+
+          <div id="aiMemoryProgressBox" class="hidden p-3.5 rounded-2xl bg-purple-50 border border-purple-200 space-y-2">
+            <div class="flex items-center justify-between font-black text-purple-900">
+              <span id="aiMemoryProgressLabel"><i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Đang dựng khung hình & hòa âm nhạc nền...</span>
+              <span id="aiMemoryProgressPct">0%</span>
+            </div>
+            <div class="w-full h-2.5 bg-purple-200 rounded-full overflow-hidden">
+              <div id="aiMemoryProgressBar" class="h-full bg-gradient-to-r from-purple-600 to-indigo-600 transition-all duration-200" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div id="aiMemoryResultBox" class="hidden space-y-2.5">
+            <div class="rounded-2xl overflow-hidden bg-slate-950 border border-slate-300 shadow-md">
+              <video id="aiMemoryResultVideoPlayer" controls playsinline class="w-full max-h-64 mx-auto"></video>
+            </div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <button type="button" onclick="downloadGeneratedAiMemoryVideo()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold flex items-center gap-1.5">
+                <i class="fa-solid fa-download"></i> Tải Video Về Máy
+              </button>
+              <button type="button" id="btnUploadAiVideoDrive" onclick="uploadGeneratedAiMemoryVideoToDrive()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black shadow-sm flex items-center gap-1.5">
+                <i class="fa-brands fa-google-drive"></i> Lưu Lên Google Drive Lớp 10A12
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+          <button type="button" onclick="closeAiMemoryVideoModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">
+            Đóng
+          </button>
+          <button type="button" id="btnRunAiMemoryGenerator" onclick="generateAutoMemoryVideoFromPhotos()" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs shadow-md flex items-center gap-1.5">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Tự Động Ghép Video Kỷ Niệm
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+
+function openAiMemoryVideoCreatorModal(preloadedUrls = null, presetTitle = "") {
+  ensureAiMemoryVideoModal();
+  aiMemoryGeneratedVideoBlob = null;
+  if (aiMemoryGeneratedVideoUrl) {
+    URL.revokeObjectURL(aiMemoryGeneratedVideoUrl);
+    aiMemoryGeneratedVideoUrl = "";
+  }
+  document.getElementById("aiMemoryResultBox").classList.add("hidden");
+  document.getElementById("aiMemoryProgressBox").classList.add("hidden");
+  if (presetTitle) {
+    document.getElementById("aiMemoryTitleInput").value = presetTitle;
+  }
+  if (Array.isArray(preloadedUrls) && preloadedUrls.length > 0) {
+    aiMemorySelectedImages = [...preloadedUrls];
+  } else {
+    // Lấy sẵn các ảnh dataURL hiện có trong album lớp nếu chưa chọn mới
+    const existingImgs = (appState.classMedia || [])
+      .filter(m => String(m.imgData || "").startsWith("data:image"))
+      .slice(0, 8)
+      .map(m => m.imgData);
+    aiMemorySelectedImages = existingImgs;
+  }
+  renderAiMemoryPreviewThumbs();
+  document.getElementById("aiMemoryVideoModal").classList.remove("hidden");
+}
+
+function closeAiMemoryVideoModal() {
+  const m = document.getElementById("aiMemoryVideoModal");
+  if (m) m.classList.add("hidden");
+}
+
+async function handleAiMemoryPhotosSelected(event) {
+  const files = event && event.target && event.target.files ? Array.from(event.target.files) : [];
+  if (files.length === 0) return;
+  aiMemorySelectedImages = [];
+  for (const f of files.slice(0, 15)) {
+    const compressed = await compressImageDataUrl(f, 960, 0.82);
+    aiMemorySelectedImages.push(compressed);
+  }
+  renderAiMemoryPreviewThumbs();
+}
+
+function renderAiMemoryPreviewThumbs() {
+  const box = document.getElementById("aiMemoryPreviewThumbs");
+  if (!box) return;
+  if (aiMemorySelectedImages.length === 0) {
+    box.innerHTML = `<p class="col-span-full text-center text-slate-400 italic py-4">Chọn từ 2 đến 15 bức ảnh để bắt đầu tạo video tự động...</p>`;
+    return;
+  }
+  box.innerHTML = aiMemorySelectedImages.map((src, idx) => `
+    <div class="relative rounded-xl overflow-hidden border border-slate-300 h-16 bg-slate-200">
+      <img src="${escapeAttr(src)}" class="w-full h-full object-cover">
+      <span class="absolute bottom-0.5 right-1 px-1 rounded bg-slate-900/75 text-white text-[9px] font-bold">#${idx + 1}</span>
+    </div>
+  `).join("");
+}
+
+function loadHtmlImageAsync(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Không tải được ảnh"));
+    img.src = src;
+  });
+}
+
+async function generateAutoMemoryVideoFromPhotos() {
+  if (aiMemorySelectedImages.length < 1) {
+    alert("Vui lòng chọn ít nhất 01 bức ảnh (tốt nhất từ 2 - 12 ảnh) để tạo Video Kỷ Niệm!");
+    return;
+  }
+  if (typeof MediaRecorder === "undefined") {
+    alert("Trình duyệt của bạn chưa hỗ trợ xuất video trực tiếp. Vui lòng dùng Chrome hoặc Edge phiên bản mới!");
+    return;
+  }
+
+  const title = (document.getElementById("aiMemoryTitleInput").value || "Kỷ Niệm Lớp 10A12").trim();
+  const progBox = document.getElementById("aiMemoryProgressBox");
+  const progBar = document.getElementById("aiMemoryProgressBar");
+  const progPct = document.getElementById("aiMemoryProgressPct");
+  const progLbl = document.getElementById("aiMemoryProgressLabel");
+  const runBtn = document.getElementById("btnRunAiMemoryGenerator");
+
+  progBox.classList.remove("hidden");
+  document.getElementById("aiMemoryResultBox").classList.add("hidden");
+  runBtn.disabled = true;
+
+  try {
+    const loadedImgs = [];
+    for (const src of aiMemorySelectedImages) {
+      try {
+        const im = await loadHtmlImageAsync(src);
+        loadedImgs.push(im);
+      } catch (e) {}
+    }
+    if (loadedImgs.length === 0) {
+      throw new Error("Không nạp được hình ảnh hợp lệ để dựng video.");
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 960;
+    canvas.height = 540;
+    const ctx = canvas.getContext("2d");
+
+    // Tạo nhạc nền nhẹ nhàng bằng Web Audio API
+    let audioDest = null;
+    let audioCtx = null;
+    let musicTimer = null;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        audioCtx = new AudioCtx();
+        audioDest = audioCtx.createMediaStreamDestination();
+        const melody = [523.25, 659.25, 783.99, 1046.50, 783.99, 659.25, 587.33, 698.46, 880.00, 783.99];
+        let step = 0;
+        const playNote = () => {
+          if (!audioCtx || audioCtx.state === "closed") return;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = melody[step % melody.length];
+          gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.55);
+          osc.connect(gain);
+          gain.connect(audioDest);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.56);
+          step++;
+        };
+        playNote();
+        musicTimer = setInterval(playNote, 600);
+      }
+    } catch (audioErr) {}
+
+    const canvasStream = canvas.captureStream(24);
+    if (audioDest && audioDest.stream) {
+      audioDest.stream.getAudioTracks().forEach(t => canvasStream.addTrack(t));
+    }
+
+    const mimeCandidate = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+      ? "video/webm;codecs=vp9"
+      : (MediaRecorder.isTypeSupported("video/webm") ? "video/webm" : "");
+    const recorder = mimeCandidate ? new MediaRecorder(canvasStream, { mimeType: mimeCandidate }) : new MediaRecorder(canvasStream);
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+
+    const fps = 24;
+    const framesPerSlide = 48; // 2 giây mỗi ảnh
+    const introFrames = 36;    // 1.5 giây tiêu đề mở đầu
+    const totalFrames = introFrames + loadedImgs.length * framesPerSlide;
+
+    const donePromise = new Promise(resolve => {
+      recorder.onstop = () => resolve();
+    });
+
+    recorder.start();
+
+    for (let f = 0; f < totalFrames; f++) {
+      // Vẽ nền gradient sang trọng
+      const bgGrad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      bgGrad.addColorStop(0, "#0f172a");
+      bgGrad.addColorStop(1, "#1e1b4b");
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (f < introFrames) {
+        const alpha = Math.min(1, f / 15);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "bold 20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("TRƯỜNG THPT SỐ 1 QUANG TRUNG • TẬP THỂ LỚP 10A12", canvas.width / 2, 220);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "900 38px sans-serif";
+        ctx.fillText(title.toUpperCase(), canvas.width / 2, 275);
+
+        ctx.fillStyle = "#93c5fd";
+        ctx.font = "bold 18px sans-serif";
+        ctx.fillText(`Album Kỷ Niệm • ${formatDateVN()}`, canvas.width / 2, 320);
+        ctx.restore();
+      } else {
+        const slideFrame = f - introFrames;
+        const slideIdx = Math.min(loadedImgs.length - 1, Math.floor(slideFrame / framesPerSlide));
+        const localF = slideFrame % framesPerSlide;
+        const progressInSlide = localF / framesPerSlide;
+        const img = loadedImgs[slideIdx];
+
+        // Hiệu ứng Ken Burns Zoom nhẹ + Fade in
+        const scale = 1.0 + progressInSlide * 0.08;
+        const imgRatio = img.width / img.height;
+        const canvasRatio = canvas.width / canvas.height;
+        let drawW, drawH;
+        if (imgRatio > canvasRatio) {
+          drawH = canvas.height * scale;
+          drawW = drawH * imgRatio;
+        } else {
+          drawW = canvas.width * scale;
+          drawH = drawW / imgRatio;
+        }
+        const offsetX = (canvas.width - drawW) / 2;
+        const offsetY = (canvas.height - drawH) / 2;
+
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, localF / 10);
+        ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+        ctx.restore();
+
+        // Thanh caption mờ phía dưới
+        ctx.fillStyle = "rgba(15, 23, 42, 0.65)";
+        ctx.fillRect(0, canvas.height - 54, canvas.width, 54);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 18px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`✨ ${title}`, 24, canvas.height - 21);
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#fde68a";
+        ctx.fillText(`10A12 • Ảnh ${slideIdx + 1}/${loadedImgs.length}`, canvas.width - 24, canvas.height - 21);
+      }
+
+      const pct = Math.round(((f + 1) / totalFrames) * 100);
+      if (progBar) progBar.style.width = `${pct}%`;
+      if (progPct) progPct.innerText = `${pct}%`;
+
+      await new Promise(r => setTimeout(r, Math.round(1000 / fps)));
+    }
+
+    recorder.stop();
+    await donePromise;
+    if (musicTimer) clearInterval(musicTimer);
+    if (audioCtx) audioCtx.close().catch(() => {});
+
+    aiMemoryGeneratedVideoBlob = new Blob(chunks, { type: "video/webm" });
+    aiMemoryGeneratedVideoUrl = URL.createObjectURL(aiMemoryGeneratedVideoBlob);
+
+    const player = document.getElementById("aiMemoryResultVideoPlayer");
+    if (player) player.src = aiMemoryGeneratedVideoUrl;
+    progBox.classList.add("hidden");
+    document.getElementById("aiMemoryResultBox").classList.remove("hidden");
+  } catch (err) {
+    progBox.classList.add("hidden");
+    alert("Lỗi khi tạo Video Kỷ Niệm: " + err.message);
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+function downloadGeneratedAiMemoryVideo() {
+  if (!aiMemoryGeneratedVideoUrl) return;
+  const title = (document.getElementById("aiMemoryTitleInput").value || "Ky_Niem_10A12").trim().replace(/\s+/g, "_");
+  const a = document.createElement("a");
+  a.href = aiMemoryGeneratedVideoUrl;
+  a.download = `${title}.webm`;
+  a.click();
+}
+
+async function uploadGeneratedAiMemoryVideoToDrive() {
+  if (!aiMemoryGeneratedVideoBlob) return;
+  const btn = document.getElementById("btnUploadAiVideoDrive");
+  const prevHtml = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang tải video lên Google Drive...`;
+  }
+
+  try {
+    const title = (document.getElementById("aiMemoryTitleInput").value || "Video Kỷ Niệm 10A12").trim();
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = ev => resolve(ev.target.result);
+      reader.onerror = () => reject(new Error("Không đọc được dữ liệu video."));
+      reader.readAsDataURL(aiMemoryGeneratedVideoBlob);
+    });
+
+    const uploaderName = appState.currentUser ? appState.currentUser.fullName : "Thành viên 10A12";
+    const res = await callApi("uploadClassMediaToDrive", {
+      title,
+      fileName: `${title.replace(/[^a-zA-Z0-9_\u00C0-\u1EF9 -]/g, "_")}_${Date.now()}.webm`,
+      mimeType: "video/webm",
+      mediaType: "VIDEO",
+      base64Data,
+      uploaderName
+    }, "POST");
+
+    if (res && res.status === "success") {
+      if (Array.isArray(res.classMedia)) {
+        appState.classMedia = res.classMedia;
+      } else if (res.item) {
+        appState.classMedia.unshift(res.item);
+      }
+      saveStateToLocal();
+      renderVtmSection();
+      closeAiMemoryVideoModal();
+      alert("🎉 Đã lưu Video Kỷ Niệm lên thư mục Google Drive chung của lớp 10A12 thành công!");
+    } else {
+      alert("Không thể tải video lên Google Drive: " + ((res && res.message) || "Kiểm tra lại kết nối mạng hoặc quyền Drive trên Apps Script."));
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = prevHtml;
+    }
   }
 }
