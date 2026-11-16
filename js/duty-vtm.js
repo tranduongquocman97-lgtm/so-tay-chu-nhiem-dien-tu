@@ -406,7 +406,31 @@ function getStudentDutyEvalRecord(sessionData, studentId) {
   return sessionData.studentEvaluations[studentId] || { status: "CHUA_CHAM", reason: "", remedy: "", resolved: false };
 }
 
+
+function renderLeaderLockNoticeBanner(tabId, roleLabel) {
+  const tab = document.getElementById(tabId);
+  if (!tab) return;
+  const existing = tab.querySelector(".leader-lock-status-banner");
+  if (!appState.currentUser || appState.roleLevel === "GVCN" || appState.roleLevel === "STUDENT") {
+    if (existing) existing.remove();
+    return;
+  }
+  const banner = existing || document.createElement("div");
+  banner.className = "leader-lock-status-banner p-3 rounded-2xl text-xs font-bold flex items-center justify-between gap-2 mb-3";
+  if (appState.allowStudentLeaderEdit) {
+    banner.className += " bg-emerald-50 border border-emerald-200 text-emerald-900";
+    banner.innerHTML = `<span><i class="fa-solid fa-circle-check text-emerald-600 mr-1.5"></i>Quyền Cán sự (${escapeHtml(roleLabel)}): <b>Đang mở ghi</b> — Mọi thao tác sẽ đồng bộ lên Google Sheets của GVCN.</span>`;
+  } else {
+    banner.className += " bg-rose-50 border border-rose-300 text-rose-900";
+    banner.innerHTML = `<span><i class="fa-solid fa-lock text-rose-600 mr-1.5"></i><b>GVCN đã khóa quyền chỉnh sửa của Ban cán sự</b> để chốt sổ tuần (chế độ chỉ xem).</span>`;
+  }
+  if (!existing) {
+    tab.insertBefore(banner, tab.firstChild);
+  }
+}
+
 function render7DutySection() {
+  renderLeaderLockNoticeBanner("tab-lao-dong", "Lao động & Ban cán sự");
   ensureDutyEvaluationState();
   const container = document.getElementById("weekly7DutyGrid");
   if (!container) return;
@@ -813,7 +837,10 @@ function renderDutyRemediationTracker() {
 let currentAssigningSessionKey = "T2_SANG";
 
 function canManageDuty() {
-  return (appState.roleLevel === "GVCN") || (appState.roleLevel === "LABOR");
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  const r = String((appState.currentUser && appState.currentUser.role) || "").toLowerCase();
+  return (appState.roleLevel === "LABOR") || r.includes("lớp trưởng") || r.includes("bí thư");
 }
 
 function openAssignDutyModal(sessionKey) {
@@ -1036,10 +1063,14 @@ async function approveVolunteerLabor(id) {
 }
 
 function canManageVtm() {
-  return (appState.roleLevel === "GVCN") || (appState.roleLevel === "VTM");
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  const r = String((appState.currentUser && appState.currentUser.role) || "").toLowerCase();
+  return (appState.roleLevel === "VTM") || r.includes("lớp trưởng") || r.includes("bí thư");
 }
 
 function renderVtmSection() {
+  renderLeaderLockNoticeBanner("tab-van-the-my", "Văn thể mỹ & Ban cán sự");
   const eventsGrid = document.getElementById("vtmEventsGrid");
   const mediaGrid = document.getElementById("classMediaGalleryGrid");
   const isVtmLeader = canManageVtm();

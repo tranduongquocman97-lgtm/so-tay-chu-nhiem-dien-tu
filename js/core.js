@@ -6,6 +6,57 @@
  * ============================================================================
  */
 
+const APP_CODE_VERSION = "15.0_VAULT_SYNC";
+
+(function handleCleanCodeVersionUpgrade() {
+  try {
+    const prevVer = localStorage.getItem("10A12_APP_CODE_VERSION");
+    if (prevVer !== APP_CODE_VERSION) {
+      // Giữ lại phiên đăng nhập, link script, mật khẩu đã đổi và danh sách đã xóa; làm sạch cache cũ bị lệch
+      const keepKeys = new Set([
+        "10A12_SCRIPT_URL",
+        "10A12_SESSION_USER",
+        "10A12_AUTH_TOKEN",
+        "10A12_GVCN_PASSWORD",
+        "10A12_GVCN_PASS_DIRTY",
+        "10A12_STUDENT_PASS_OVERRIDES",
+        "10A12_DELETED_STUDENTS",
+        "10A12_SCHOOL_START_DATE",
+        "10A12_CONDUCT_QUOTA_PCT",
+        "10A12_SEATING_SHORT_NAME"
+      ]);
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith("10A12_") && !keepKeys.has(k)) {
+          localStorage.removeItem(k);
+        }
+      });
+      localStorage.setItem("10A12_APP_CODE_VERSION", APP_CODE_VERSION);
+    }
+  } catch (e) {}
+})();
+
+function filterOutDeletedStudentsFromList(list, deletedArchiveList) {
+  if (!Array.isArray(list)) return [];
+  const archives = Array.isArray(deletedArchiveList)
+    ? deletedArchiveList
+    : safeJsonParse(localStorage.getItem("10A12_DELETED_STUDENTS"), []);
+  const deletedIds = new Set();
+  const deletedNames = new Set();
+  archives.forEach(item => {
+    const st = item && item.studentData ? item.studentData : item;
+    if (st && st.id) deletedIds.add(String(st.id).trim());
+    if (st && st.hoTen) deletedNames.add(removeVietnameseTones(st.hoTen));
+  });
+  return list.filter(s => {
+    if (!s) return false;
+    const idStr = String(s.id || "").trim();
+    const nameStr = removeVietnameseTones(s.hoTen || "");
+    if (idStr && deletedIds.has(idStr)) return false;
+    if (nameStr && deletedNames.has(nameStr)) return false;
+    return true;
+  });
+}
+
 const GAS_API_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1lTYoi_wIdFpd_jneRKW8TtzUDyrtKGdkfk6K0OGErPfyKsjlB9hfQ/exec";
 
 // ==================== 1. CHUẨN HÓA TIẾNG VIỆT & TIỆN ÍCH AN TOÀN ====================
@@ -642,7 +693,7 @@ let appState = {
   currentCampaignId: "KY1_100K",
   currentStudentTeamFilter: "ALL",
 
-  students: safeJsonParse(localStorage.getItem("10A12_STUDENTS_V9"), null) || DEFAULT_STUDENTS_10A12,
+  students: normalizeStudentRosterAccounts(safeJsonParse(localStorage.getItem("10A12_STUDENTS_V9"), null) || DEFAULT_STUDENTS_10A12),
   violations: safeJsonParse(localStorage.getItem("10A12_VIOLATIONS_V9"), []),
   campaigns: safeJsonParse(localStorage.getItem("10A12_CAMPAIGNS_V9"), null) || [
     { id: "KY1_100K", title: "Quỹ Lớp Học Kỳ 1", target: 100000, status: "Đang thu" },
@@ -743,6 +794,41 @@ function initAuthSession() {
   }
 }
 
+function deriveRoleLevelFromChucVu(chucVuRaw) {
+  const chucVu = String(chucVuRaw || "").toLowerCase().trim();
+  if (!chucVu || chucVu === "thành viên" || chucVu === "học sinh") return "STUDENT";
+  if (chucVu.includes("thủ quỹ")) return "TREASURER";
+  if (chucVu.includes("lao động")) return "LABOR";
+  if (chucVu.includes("văn thể mỹ") || chucVu.includes("vtm")) return "VTM";
+  if (
+    chucVu.includes("lớp trưởng") ||
+    chucVu.includes("lớp phó") ||
+    chucVu.includes("bí thư") ||
+    chucVu.includes("tổ trưởng") ||
+    chucVu.includes("cờ đỏ") ||
+    chucVu.includes("thi đua") ||
+    chucVu.includes("cán sự")
+  ) {
+    return "LEADER";
+  }
+  return "STUDENT";
+}
+
+function normalizeStudentRosterAccounts(list, deletedArchiveList) {
+  const filtered = filterOutDeletedStudentsFromList(list, deletedArchiveList);
+  const passOverrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+  return filtered.map(s => {
+    const cleanName = removeVietnameseTones(s.hoTen || s.id || "");
+    const defaultAcc = cleanName ? `${cleanName}.k58qt` : String(s.id || "").toLowerCase();
+    const overridePass = s.id && passOverrides[s.id] ? String(passOverrides[s.id]) : "";
+    return {
+      ...s,
+      taiKhoan: String(s.taiKhoan || s.tenDangNhap || defaultAcc).trim(),
+      matKhau: overridePass || String(s.matKhau || "123456").trim()
+    };
+  });
+}
+
 function matchStudentAccount(list, rawLower, cleanRawInput, baseInput, baseRaw) {
   if (!Array.isArray(list)) return null;
   return list.find(s => {
@@ -785,41 +871,55 @@ async function handleUserLogin(e) {
   }
 
   try {
-    // 1. Thử xác thực trực tiếp qua máy chủ Apps Script để nhận Auth Token
+    appState.students = normalizeStudentRosterAccounts(appState.students);
+
+    // 1. Thử xác thực trực tiếp qua máy chủ Apps Script để nhận Auth Token chính thức
     const cloudRes = await callApi("loginUser", { username: rawInput, password }, "POST");
     if (cloudRes && cloudRes.status === "success" && cloudRes.user) {
       appState.authToken = cloudRes.token || "";
       localStorage.setItem("10A12_AUTH_TOKEN", appState.authToken);
       appState.currentUser = cloudRes.user;
-      await finishLogin(true);
+      if (cloudRes.user.roleLevel === "GVCN") {
+        localStorage.setItem("10A12_GVCN_PASSWORD", password);
+      } else if (cloudRes.user.studentId) {
+        const overrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+        overrides[cloudRes.user.studentId] = password;
+        localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(overrides));
+      }
+      await finishLogin(true, true);
       return;
     }
 
-    // Chỉ chặn ngay nếu máy chủ xác nhận rõ là SAI MẬT KHẨU (hoặc GVCN nhập sai mật khẩu)
+    // Chỉ chặn ngay nếu máy chủ xác nhận rõ là SAI MẬT KHẨU
     const isGvcnInput = (cleanInput === "gvcn" || cleanInput === "gvcnk58qt" || rawLower === "gvcn" || rawLower === "gvcn.k58qt");
-    if (cloudRes && cloudRes.status === "error") {
-      if (cloudRes.errorCode === "WRONG_PASSWORD" || (isGvcnInput && String(cloudRes.message || "").toLowerCase().includes("mật khẩu"))) {
+    if (cloudRes && cloudRes.status === "error" && cloudRes.errorCode === "WRONG_PASSWORD") {
+      if (errorBox) {
+        errorBox.innerText = cloudRes.message || "Mật khẩu không chính xác!";
+        errorBox.classList.remove("hidden");
+      }
+      return;
+    }
+
+    // 2. Xác thực thông minh qua danh sách cục bộ & tự động cấp token ngầm từ máy chủ
+    const savedGvcnPass = localStorage.getItem("10A12_GVCN_PASSWORD") || "123456";
+    if (isGvcnInput) {
+      if (password === savedGvcnPass) {
+        appState.currentUser = {
+          username: "gvcn",
+          fullName: "ThS. Trần Dương Quốc Mẫn",
+          role: "GVCN & Phó Bí thư Đoàn trường",
+          roleLevel: "GVCN"
+        };
+        await trySilentTokenExchange();
+        await finishLogin(true, true);
+        return;
+      } else {
         if (errorBox) {
-          errorBox.innerText = cloudRes.message || "Mật khẩu không chính xác!";
+          errorBox.innerText = "Mật khẩu GVCN không chính xác!";
           errorBox.classList.remove("hidden");
         }
         return;
       }
-    }
-
-    // 2. Fallback thông minh (khi mất mạng, DanhSach trên Sheets chưa nạp dữ liệu, hoặc URL GAS cũ)
-    const savedGvcnPass = localStorage.getItem("10A12_GVCN_PASSWORD") || "123456";
-    if (isGvcnInput && password === savedGvcnPass) {
-      appState.authToken = "";
-      localStorage.removeItem("10A12_AUTH_TOKEN");
-      appState.currentUser = {
-        username: "gvcn",
-        fullName: "ThS. Trần Dương Quốc Mẫn",
-        role: "GVCN & Phó Bí thư Đoàn trường",
-        roleLevel: "GVCN"
-      };
-      finishLogin(false);
-      return;
     }
 
     const baseInput = cleanInput.replace(/k58qt$/, "");
@@ -827,38 +927,24 @@ async function handleUserLogin(e) {
 
     let matched = matchStudentAccount(appState.students, rawLower, cleanInput, baseInput, baseRaw);
     if (!matched && typeof DEFAULT_STUDENTS_10A12 !== "undefined") {
-      matched = matchStudentAccount(DEFAULT_STUDENTS_10A12, rawLower, cleanInput, baseInput, baseRaw);
+      matched = matchStudentAccount(normalizeStudentRosterAccounts(DEFAULT_STUDENTS_10A12), rawLower, cleanInput, baseInput, baseRaw);
     }
 
     if (matched) {
-      const passExpected = String(matched.matKhau || "123456").trim();
+      const passOverrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+      const passExpected = String(passOverrides[matched.id] || matched.matKhau || "123456").trim();
       if (password === passExpected) {
-        let roleLevel = "STUDENT";
-        const chucVu = (matched.chucVu || "").toLowerCase();
-
-        if (chucVu.includes("lớp trưởng") || chucVu.includes("lớp phó học tập") || chucVu.includes("bí thư")) {
-          roleLevel = "LEADER";
-        } else if (chucVu.includes("thủ quỹ")) {
-          roleLevel = "TREASURER";
-        } else if (chucVu.includes("lao động")) {
-          roleLevel = "LABOR";
-        } else if (chucVu.includes("văn thể mỹ") || chucVu.includes("vtm")) {
-          roleLevel = "VTM";
-        } else if (chucVu.includes("tổ trưởng") || chucVu.includes("cờ đỏ") || chucVu.includes("thi đua")) {
-          roleLevel = "LEADER";
-        }
-
-        appState.authToken = "";
-        localStorage.removeItem("10A12_AUTH_TOKEN");
+        const roleLevel = deriveRoleLevelFromChucVu(matched.chucVu);
         appState.currentUser = {
-          username: matched.taiKhoan || matched.tenDangNhap || removeVietnameseTones(matched.hoTen) || rawLower,
+          username: matched.taiKhoan || `${removeVietnameseTones(matched.hoTen)}.k58qt`,
           studentId: matched.id,
           fullName: matched.hoTen,
           role: matched.chucVu || "Học sinh",
           roleLevel: roleLevel,
           team: matched.to
         };
-        finishLogin(false);
+        await trySilentTokenExchange();
+        await finishLogin(true, true);
         return;
       } else {
         if (errorBox) {
@@ -881,13 +967,46 @@ async function handleUserLogin(e) {
   }
 }
 
-async function finishLogin(shouldSyncCloud = false) {
+async function trySilentTokenExchange() {
+  if (!appState.currentUser) return false;
+  try {
+    const res = await callApi("reissueSessionToken", {
+      username: appState.currentUser.username || "",
+      studentId: appState.currentUser.studentId || "",
+      roleLevel: appState.currentUser.roleLevel || "STUDENT",
+      fullName: appState.currentUser.fullName || ""
+    }, "POST");
+    if (res && res.status === "success" && res.token) {
+      appState.authToken = res.token;
+      localStorage.setItem("10A12_AUTH_TOKEN", appState.authToken);
+      if (res.user) {
+        appState.currentUser = { ...appState.currentUser, ...res.user };
+        localStorage.setItem("10A12_SESSION_USER", JSON.stringify(appState.currentUser));
+      }
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function getDefaultLandingTabForRole(roleLevel) {
+  const isMobile = window.innerWidth < 768;
+  if (roleLevel === "STUDENT") return "tab-ca-nhan";
+  if (!isMobile) return "tab-tong-quan";
+  if (roleLevel === "LABOR") return "tab-lao-dong";
+  if (roleLevel === "TREASURER") return "tab-quy-lop";
+  if (roleLevel === "VTM") return "tab-van-the-my";
+  if (roleLevel === "LEADER") return "tab-thi-dua";
+  return "tab-tong-quan";
+}
+
+async function finishLogin(shouldSyncCloud = false, isFreshLogin = false) {
   localStorage.setItem("10A12_SESSION_USER", JSON.stringify(appState.currentUser));
   const authScreen = document.getElementById("authScreen");
   if (authScreen) authScreen.classList.add("hidden");
-  applyRolePermissions();
+  applyRolePermissions(isFreshLogin);
   renderAllSections();
-  if (shouldSyncCloud && appState.authToken) {
+  if (shouldSyncCloud) {
     await syncWithCloud();
   }
 }
@@ -902,16 +1021,102 @@ function handleUserLogout() {
   }
 }
 
-function updateMasterSwitchButtonUI() {
-  const btn = document.getElementById("btnMasterSwitch");
-  if (!btn) return;
-  btn.innerHTML = appState.allowStudentLeaderEdit
-    ? `<i class="fa-solid fa-toggle-on text-emerald-600"></i><span class="hidden md:inline ml-1">Cán sự: Mở ghi</span>`
-    : `<i class="fa-solid fa-toggle-off text-slate-400"></i><span class="hidden md:inline ml-1">Cán sự: Khóa ghi</span>`;
+// ==================== MA TRẬN PHÂN QUYỀN THỐNG NHẤT (GVCN & BAN CÁN SỰ) ====================
+function isLeaderEditUnlocked() {
+  return appState.roleLevel === "GVCN" || Boolean(appState.allowStudentLeaderEdit);
 }
 
-function applyRolePermissions() {
+function isTopClassLeader() {
+  if (!appState.currentUser) return false;
+  if (appState.roleLevel === "GVCN") return true;
+  const r = String(appState.currentUser.role || "").toLowerCase();
+  return r.includes("lớp trưởng") || r.includes("bí thư");
+}
+
+function canManageDiscipline() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  return appState.roleLevel === "LEADER" || isTopClassLeader();
+}
+
+function canManageDuty() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  return appState.roleLevel === "LABOR" || isTopClassLeader();
+}
+
+function canManageVtm() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  return appState.roleLevel === "VTM" || isTopClassLeader();
+}
+
+function canManageFund() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  return appState.roleLevel === "TREASURER";
+}
+
+function canCurrentUserEditSeating() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  return isTopClassLeader();
+}
+
+function updateMasterSwitchButtonUI() {
+  const btn = document.getElementById("btnMasterSwitch");
+  if (btn) {
+    btn.innerHTML = appState.allowStudentLeaderEdit
+      ? `<i class="fa-solid fa-toggle-on text-emerald-600"></i><span class="hidden md:inline ml-1">Cán sự: Mở ghi</span>`
+      : `<i class="fa-solid fa-toggle-off text-slate-400"></i><span class="hidden md:inline ml-1">Cán sự: Khóa ghi</span>`;
+  }
+  updateLeaderPermissionStatusPill();
+}
+
+function updateLeaderPermissionStatusPill() {
   if (!appState.currentUser) return;
+  const role = appState.roleLevel || "GUEST";
+  const isGVCN = role === "GVCN";
+  const isStudent = role === "STUDENT";
+  if (isGVCN || isStudent) {
+    const oldPill = document.getElementById("leaderLivePermissionPill");
+    if (oldPill) oldPill.remove();
+    return;
+  }
+
+  let pill = document.getElementById("leaderLivePermissionPill");
+  const badgeAnchor = document.getElementById("currentUserRoleBadge");
+  if (!pill && badgeAnchor && badgeAnchor.parentElement) {
+    pill = document.createElement("span");
+    pill.id = "leaderLivePermissionPill";
+    pill.className = "ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1";
+    badgeAnchor.parentElement.appendChild(pill);
+  }
+  if (pill) {
+    if (appState.allowStudentLeaderEdit) {
+      pill.className = "ml-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black inline-flex items-center gap-1";
+      pill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i> Đang mở ghi`;
+    } else {
+      pill.className = "ml-1.5 px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black inline-flex items-center gap-1";
+      pill.innerHTML = `<i class="fa-solid fa-lock text-rose-600"></i> GVCN đã khóa ghi`;
+    }
+  }
+}
+
+function applyRolePermissions(shouldAutoRouteTab = false) {
+  if (!appState.currentUser) return;
+
+  // Đồng bộ lại chức vụ mới nhất từ danh sách lớp nếu là học sinh
+  if (appState.currentUser.studentId && Array.isArray(appState.students)) {
+    const freshSt = appState.students.find(s => s.id === appState.currentUser.studentId);
+    if (freshSt && freshSt.chucVu) {
+      appState.currentUser.role = freshSt.chucVu;
+      appState.currentUser.roleLevel = deriveRoleLevelFromChucVu(freshSt.chucVu);
+      appState.currentUser.team = freshSt.to || appState.currentUser.team;
+      localStorage.setItem("10A12_SESSION_USER", JSON.stringify(appState.currentUser));
+    }
+  }
+
   const role = appState.currentUser.roleLevel || "GUEST";
   appState.roleLevel = role;
 
@@ -923,10 +1128,9 @@ function applyRolePermissions() {
   const isGVCN = (role === "GVCN");
   const isStudent = (role === "STUDENT");
   const hasStudentPortal = Boolean(appState.currentUser.studentId);
-  const roleStr = String(appState.currentUser.role || "").toLowerCase();
-  const canEditSeating = isGVCN || roleStr.includes("lớp trưởng");
-  const canEditFund = isGVCN || role === "TREASURER";
-  const canEditVtm = isGVCN || role === "VTM";
+  const canEditSeating = canCurrentUserEditSeating();
+  const canEditFund = canManageFund();
+  const canEditVtm = canManageVtm();
 
   toggleEl("btnMasterSwitch", isGVCN);
   updateMasterSwitchButtonUI();
@@ -936,6 +1140,14 @@ function applyRolePermissions() {
   toggleEl("btn-side-tab-cai-dat", isGVCN);
   toggleEl("btn-tab-ca-nhan", hasStudentPortal);
   toggleEl("btn-side-tab-ca-nhan", hasStudentPortal);
+
+  // Tối ưu thanh điều hướng Mobile cho từng vai trò Ban cán sự
+  if (!isGVCN && !isStudent) {
+    toggleEl("btn-tab-lao-dong", true);
+    toggleEl("btn-tab-quy-lop", true);
+    toggleEl("btn-tab-van-the-my", true);
+    toggleEl("btn-tab-thi-dua", true);
+  }
 
   toggleEl("btnLockWeekAction", isGVCN);
   toggleEl("btnRotateSeating", canEditSeating);
@@ -957,7 +1169,14 @@ function applyRolePermissions() {
   toggleEl("btnSaveStudentChanges", isGVCN);
   toggleEl("btnDeleteStudent", isGVCN);
 
-  if (isStudent) switchTab("tab-ca-nhan");
+  if (isStudent) {
+    switchTab("tab-ca-nhan");
+  } else if (shouldAutoRouteTab) {
+    const landingTab = getDefaultLandingTabForRole(role);
+    if (landingTab && landingTab !== "tab-tong-quan") {
+      switchTab(landingTab);
+    }
+  }
 }
 
 function toggleEl(id, show) {
@@ -971,10 +1190,10 @@ async function toggleMasterEditSwitch() {
   if (appState.roleLevel !== "GVCN") return;
   appState.allowStudentLeaderEdit = !appState.allowStudentLeaderEdit;
   saveStateToLocal();
-  updateMasterSwitchButtonUI();
+  applyRolePermissions(false);
+  renderAllSections();
   await callApi("saveConfig", { allowStudentLeaderEdit: appState.allowStudentLeaderEdit }, "POST");
-  alert(appState.allowStudentLeaderEdit ? "Đã MỞ quyền ghi nhận nề nếp cho Ban cán sự lớp!" : "Đã KHÓA quyền ghi nề nếp của Ban cán sự lớp!");
-  if (typeof renderAttendanceSession === "function") renderAttendanceSession();
+  alert(appState.allowStudentLeaderEdit ? "Đã MỞ quyền ghi nhận nề nếp, trực nhật, quỹ & sơ đồ cho Ban cán sự lớp!" : "Đã KHÓA quyền chỉnh sửa của Ban cán sự lớp (chuyển sang chế độ chỉ xem)!");
 }
 
 // ==================== 8. TOP TICKER LỜI CHÚC & THÔNG ĐIỆP ====================
@@ -1401,36 +1620,73 @@ function getParentLookupPortalUrl() {
   return lookupUrl;
 }
 
+let lastPortalOpenTimestamp = 0;
+
 function openParentLookupPortal(e) {
-  if (e && e.preventDefault) e.preventDefault();
+  const ev = e || (typeof window !== "undefined" ? window.event : null);
+  if (ev) {
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    if (typeof ev.stopImmediatePropagation === "function") ev.stopImmediatePropagation();
+  }
+
+  // Chống kích hoạt kép (double trigger) nếu phần tử có cả href và onclick
+  const now = Date.now();
+  if (now - lastPortalOpenTimestamp < 600) {
+    return false;
+  }
+  lastPortalOpenTimestamp = now;
+
   const targetUrl = getParentLookupPortalUrl();
   const isMobileOrTouch = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "") || window.innerWidth < 768;
 
   if (isMobileOrTouch) {
-    window.location.href = targetUrl;
+    window.location.assign(targetUrl);
   } else {
     const win = window.open(targetUrl, "_blank", "noopener,noreferrer");
     if (!win) {
-      window.location.href = targetUrl;
+      window.location.assign(targetUrl);
     }
   }
+  return false;
 }
 
 // Giữ tên hàm cũ để tương thích 100% với onclick="copyParentLookupPortalLink()" trong index.html
 function copyParentLookupPortalLink(e) {
-  openParentLookupPortal(e);
+  return openParentLookupPortal(e);
 }
 
 function upgradePortalButtonUI() {
   document.querySelectorAll("button, a").forEach(el => {
     const onClickAttr = el.getAttribute("onclick") || "";
+    const hrefAttr = el.getAttribute("href") || "";
     const txt = (el.innerText || "").trim();
-    if (onClickAttr.includes("copyParentLookupPortalLink") || onClickAttr.includes("openParentLookupPortal") || txt.includes("Cổng Tra Cứu")) {
+    if (
+      onClickAttr.includes("copyParentLookupPortalLink") ||
+      onClickAttr.includes("openParentLookupPortal") ||
+      hrefAttr.includes("tracuu.html") ||
+      txt.includes("Cổng Tra Cứu")
+    ) {
       const icon = el.querySelector("i.fa-share-nodes, i.fa-share-alt, i.fa-copy");
       if (icon) {
         icon.className = "fa-solid fa-arrow-up-right-from-square";
       }
       el.setAttribute("title", "Mở trực tiếp Cổng Tra Cứu Phụ Huynh & Học Sinh");
+
+      // Gỡ bỏ href="tracuu.html" & inline onclick để trình duyệt không bao giờ vừa chuyển trang hiện tại vừa mở tab mới
+      if (el.tagName === "A") {
+        el.setAttribute("href", "javascript:void(0)");
+        el.removeAttribute("target");
+      }
+      if (onClickAttr) {
+        el.removeAttribute("onclick");
+      }
+      if (!el.dataset.portalBound) {
+        el.dataset.portalBound = "1";
+        el.addEventListener("click", (ev) => {
+          openParentLookupPortal(ev);
+        });
+      }
     }
   });
 }
@@ -1643,6 +1899,7 @@ function setDisciplineScoreFilter(mode) {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
 }
 
 function setDisciplineLogScope(scope) {
@@ -1656,6 +1913,7 @@ function setDisciplineLogScope(scope) {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
 }
 
 function applyDisciplineEnhancements() {
@@ -2904,6 +3162,7 @@ async function toggleSpecialReportParentSigned(reportId) {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
   await callApi("saveConfig", {
     specialViolationReportsJson: JSON.stringify(appState.specialViolationReports)
   }, "POST");
@@ -2918,6 +3177,7 @@ async function deleteSpecialViolationReport(reportId) {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
   await callApi("saveConfig", {
     specialViolationReportsJson: JSON.stringify(appState.specialViolationReports)
   }, "POST");
@@ -3627,9 +3887,473 @@ function saveNewCloudScriptUrl() {
   location.reload();
 }
 
-const PUBLIC_API_ACTIONS = new Set(["loginUser", "lookupStudent", "getPublicFundStatement"]);
 
-async function callApi(action, data = {}, method = "POST") {
+// ==================== BỘ MÁY SƠ ĐỒ LỚP HỌC RESPONSIVE (THOÁNG GỌN & TỐI ƯU ĐIỆN THOẠI) ====================
+let seatingShortNameMode = localStorage.getItem("10A12_SEATING_SHORT_NAME") !== "false"; // Mặc định: Tên gọn 2 chữ
+let seatingMobileTeamTab = "ALL"; // ALL | D1 | D2 | D3 | D4
+let seatingSwapModeEnabled = false;
+let seatingSelectedCoords = null; // { r, c }
+
+function getSmartShortStudentName(fullName) {
+  const clean = String(fullName || "").trim();
+  if (!clean) return "";
+  const parts = clean.split(/\s+/);
+  if (parts.length <= 2) return clean;
+  const last2 = parts.slice(-2).join(" ");
+  const allStudents = Array.isArray(appState.students) ? appState.students : [];
+  const duplicates = allStudents.filter(s => {
+    const p = String(s.hoTen || "").trim().split(/\s+/);
+    return p.slice(-2).join(" ") === last2;
+  });
+  if (duplicates.length > 1) {
+    return `${parts[0][0]}.${last2}`;
+  }
+  return last2;
+}
+
+function getCompactRoleBadgeText(roleStr) {
+  const r = String(roleStr || "").trim();
+  if (!r) return "";
+  const map = {
+    "Lớp trưởng": "LT",
+    "Lớp phó Học tập": "P.HT",
+    "Phó HT": "P.HT",
+    "Lớp phó Lao động": "P.LĐ",
+    "Phó LĐ": "P.LĐ",
+    "Lớp phó VTM": "VTM",
+    "Phó VTM": "VTM",
+    "Bí thư Chi đoàn": "Bí thư",
+    "Bí thư": "Bí thư",
+    "Thủ quỹ lớp": "Thủ quỹ",
+    "Thủ quỹ": "Thủ quỹ",
+    "Ban Thi đua": "Thi đua",
+    "Cờ đỏ": "Cờ đỏ"
+  };
+  return map[r] || r;
+}
+
+function findStudentInfoBySeatName(seatName) {
+  if (!seatName) return null;
+  const target = removeVietnameseTones(seatName);
+  return (appState.students || []).find(s => removeVietnameseTones(s.hoTen) === target) || null;
+}
+
+function getTeamDotColorClass(teamStr) {
+  if (teamStr === "Tổ 1") return "bg-sky-500";
+  if (teamStr === "Tổ 2") return "bg-emerald-500";
+  if (teamStr === "Tổ 3") return "bg-amber-500";
+  if (teamStr === "Tổ 4") return "bg-purple-500";
+  return "bg-slate-400";
+}
+
+function canCurrentUserEditSeating() {
+  if (!appState.currentUser) return false;
+  if (appState.roleLevel === "GVCN") return true;
+  const r = String(appState.currentUser.role || "").toLowerCase();
+  return r.includes("lớp trưởng");
+}
+
+function toggleSeatingShortNameMode() {
+  seatingShortNameMode = !seatingShortNameMode;
+  localStorage.setItem("10A12_SEATING_SHORT_NAME", String(seatingShortNameMode));
+  renderSeatingChart();
+}
+
+function setSeatingMobileDayFilter(dayFilter) {
+  seatingMobileTeamTab = dayFilter;
+  renderSeatingChart();
+}
+
+function toggleSeatingSwapMode() {
+  if (!canCurrentUserEditSeating()) {
+    alert("Chỉ GVCN hoặc Lớp trưởng mới có quyền sắp xếp lại chỗ ngồi!");
+    return;
+  }
+  seatingSwapModeEnabled = !seatingSwapModeEnabled;
+  seatingSelectedCoords = null;
+  renderSeatingChart();
+}
+
+function handleModernSeatClick(r, c) {
+  const layout = currentSeatingLayout || DEFAULT_SEATING_LAYOUT;
+  const seat = (layout[r] && layout[r][c]) ? layout[r][c] : { name: "", role: "" };
+  const canEdit = canCurrentUserEditSeating();
+
+  // Nếu đang bật chế độ đổi chỗ (hoặc đang chọn dở ghế 1)
+  if (canEdit && (seatingSwapModeEnabled || seatingSelectedCoords !== null)) {
+    if (!seatingSelectedCoords) {
+      seatingSelectedCoords = { r, c };
+      renderSeatingChart();
+      return;
+    }
+    if (seatingSelectedCoords.r === r && seatingSelectedCoords.c === c) {
+      seatingSelectedCoords = null;
+      renderSeatingChart();
+      return;
+    }
+    // Hoán đổi 2 ghế
+    const firstSeat = layout[seatingSelectedCoords.r][seatingSelectedCoords.c];
+    layout[seatingSelectedCoords.r][seatingSelectedCoords.c] = { ...seat };
+    layout[r][c] = { ...firstSeat };
+    seatingSelectedCoords = null;
+    currentSeatingLayout = layout;
+    saveStateToLocal();
+    renderSeatingChart();
+    return;
+  }
+
+  // Chế độ xem thông tin nhanh học sinh khi bấm vào ghế
+  if (seat && seat.name) {
+    const st = findStudentInfoBySeatName(seat.name);
+    if (st && typeof openStudentDisciplineDetailModal === "function") {
+      openStudentDisciplineDetailModal(st.id);
+    } else {
+      alert(`Vị trí Dãy ${Math.floor(c / 2) + 1} • Bàn ${layout.length - r}: ${seat.name}`);
+    }
+  } else if (canEdit) {
+    // Ghế trống: gợi ý bật chế độ đổi chỗ
+    seatingSwapModeEnabled = true;
+    seatingSelectedCoords = { r, c };
+    renderSeatingChart();
+  }
+}
+
+function renderSingleModernSeatCell(r, c, seat, layout) {
+  const hasStudent = Boolean(seat && seat.name && seat.name.trim());
+  const isSelected = Boolean(seatingSelectedCoords && seatingSelectedCoords.r === r && seatingSelectedCoords.c === c);
+  const stObj = hasStudent ? findStudentInfoBySeatName(seat.name) : null;
+  const score = stObj ? parseScore(stObj.diemThiDua, 100) : 100;
+  const teamStr = stObj ? stObj.to : "";
+  const dotCls = getTeamDotColorClass(teamStr);
+
+  const rawRole = (seat && seat.role) || (stObj && stObj.chucVu !== "Thành viên" ? stObj.chucVu : "");
+  const shortRole = getCompactRoleBadgeText(rawRole);
+
+  const displayName = !hasStudent
+    ? "Trống"
+    : (seatingShortNameMode ? getSmartShortStudentName(seat.name) : seat.name);
+
+  let cardStateCls = "bg-white border-slate-200 hover:border-sky-400 hover:bg-sky-50/40";
+  if (!hasStudent) {
+    cardStateCls = "bg-slate-50/70 border-dashed border-slate-300 text-slate-400";
+  } else if (isSelected) {
+    cardStateCls = "bg-amber-50 border-2 border-amber-500 ring-2 ring-amber-300 shadow-md scale-[1.02]";
+  } else if (score < 70) {
+    cardStateCls = "bg-rose-50/60 border-rose-300 hover:border-rose-400";
+  } else if (score > 100) {
+    cardStateCls = "bg-emerald-50/50 border-emerald-300 hover:border-emerald-400";
+  } else if (shortRole) {
+    cardStateCls = "bg-sky-50/40 border-sky-200 hover:border-sky-400";
+  }
+
+  return `
+    <div onclick="handleModernSeatClick(${r}, ${c})"
+      title="${hasStudent ? `${escapeAttr(seat.name)} (${escapeAttr(teamStr)} • ${score}đ) - Bấm để xem chi tiết` : 'Ghế trống'}"
+      class="px-2 py-2 rounded-xl border ${cardStateCls} cursor-pointer transition-all select-none flex flex-col justify-center min-h-[44px] relative overflow-hidden">
+      ${hasStudent ? `
+        <div class="flex items-center justify-between gap-1 min-w-0">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="w-2 h-2 rounded-full ${dotCls} shrink-0"></span>
+            <span class="font-bold text-slate-900 ${seatingShortNameMode ? 'text-xs whitespace-nowrap truncate' : 'text-[11px] leading-tight line-clamp-2'}">
+              ${escapeHtml(displayName)}
+            </span>
+          </div>
+          ${shortRole ? `
+            <span class="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-black text-[9px] shrink-0 uppercase tracking-tighter">
+              ${escapeHtml(shortRole)}
+            </span>
+          ` : ''}
+        </div>
+      ` : `
+        <span class="text-[10.5px] text-center italic text-slate-400">Trống</span>
+      `}
+    </div>
+  `;
+}
+
+function renderSeatingChart() {
+  const tabSoDo = document.getElementById("tab-so-do-lop");
+  if (!tabSoDo) return;
+
+  // Ẩn các khối sơ đồ/chú thích kiểu cũ bên trong #tab-so-do-lop (giữ nguyên thanh tiêu đề nút bấm đầu tab)
+  Array.from(tabSoDo.children).forEach((child, idx) => {
+    if (child.id === "modernSeatingChartRoot") return;
+    // Giữ lại khối header đầu tiên chứa các nút Xuất Sơ Đồ / Xoay Dãy / Lưu Mốc / Lưu Lên Sheets
+    const hasTopToolbarBtns = child.querySelector("#btnRotateSeating, #btnSaveSeating, #btnSaveSeatingHistory") ||
+                              (child.innerText || "").includes("Xoay Dãy Tuần Hoàn");
+    if (hasTopToolbarBtns && idx === 0) {
+      return;
+    }
+    if (
+      child.id === "classroomGrid" ||
+      child.id === "seatingChartGrid" ||
+      child.id === "seatingChartContainer" ||
+      (child.innerText || "").includes("PHÂN MÀU THEO TỔ THỰC TẾ") ||
+      (child.innerText || "").includes("LỐI ĐI") ||
+      (child.innerText || "").includes("BÀN 6")
+    ) {
+      child.style.display = "none";
+    }
+  });
+
+  // Ẩn mọi phần tử cũ có chữ "PHÂN MÀU THEO TỔ THỰC TẾ" hoặc lưới ghế cũ nằm lồng bên trong
+  tabSoDo.querySelectorAll("*").forEach(el => {
+    if (el.closest("#modernSeatingChartRoot")) return;
+    if (el.id === "classroomGrid" || el.id === "seatingChartGrid") {
+      el.style.display = "none";
+    }
+  });
+
+  let host = document.getElementById("modernSeatingChartRoot");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "modernSeatingChartRoot";
+    tabSoDo.appendChild(host);
+  }
+  host.style.display = "block";
+  host.className = "w-full space-y-3 mt-3";
+
+  const layout = Array.isArray(currentSeatingLayout) && currentSeatingLayout.length > 0
+    ? currentSeatingLayout
+    : DEFAULT_SEATING_LAYOUT;
+
+  const canEdit = canCurrentUserEditSeating();
+  const totalRows = layout.length; // 6 hàng (r = 0 là Hàng 6 cuối lớp, r = 5 là Hàng 1 gần bục giảng)
+
+  // Thanh điều khiển gọn nhẹ, thoáng mắt
+  const toolbarHtml = `
+    <div class="p-2.5 sm:p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" onclick="toggleSeatingShortNameMode()"
+          class="px-3 py-1.5 rounded-xl border font-bold transition flex items-center gap-1.5 ${seatingShortNameMode ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-slate-900 text-white border-slate-900'}">
+          <i class="fa-solid ${seatingShortNameMode ? 'fa-compress' : 'fa-expand'}"></i>
+          <span>${seatingShortNameMode ? 'Tên gọn (Thoáng)' : 'Đầy đủ họ tên'}</span>
+        </button>
+
+        ${canEdit ? `
+          <button type="button" onclick="toggleSeatingSwapMode()"
+            class="px-3 py-1.5 rounded-xl border font-bold transition flex items-center gap-1.5 ${seatingSwapModeEnabled ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'}">
+            <i class="fa-solid fa-arrows-rotate"></i>
+            <span>${seatingSwapModeEnabled ? 'Đang bật Đổi chỗ' : 'Chế độ đổi chỗ'}</span>
+          </button>
+        ` : ''}
+      </div>
+
+      <!-- Chú thích màu Tổ gọn gàng -->
+      <div class="flex items-center gap-3 text-[11px] font-bold text-slate-600 flex-wrap">
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block"></i>Tổ 1</span>
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></i>Tổ 2</span>
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></i>Tổ 3</span>
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block"></i>Tổ 4</span>
+      </div>
+    </div>
+
+    ${seatingSwapModeEnabled ? `
+      <div class="p-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-bold flex items-center justify-between gap-2">
+        <span>
+          <i class="fa-solid fa-hand-pointer text-amber-600 mr-1.5"></i>
+          ${seatingSelectedCoords
+            ? `Đã chọn ghế của <b>${escapeHtml((layout[seatingSelectedCoords.r][seatingSelectedCoords.c] || {}).name || "Ghế trống")}</b> — Bấm vào ghế thứ 2 để hoán đổi!`
+            : "Bấm vào ghế thứ nhất, sau đó bấm vào ghế thứ hai để hoán đổi vị trí."}
+        </span>
+        <button type="button" onclick="toggleSeatingSwapMode()" class="px-2.5 py-1 rounded-lg bg-white border border-amber-300 text-[11px] font-black shrink-0">Xong</button>
+      </div>
+    ` : ''}
+  `;
+
+  // Thanh Bục giảng & Bàn Giáo viên (Phía dưới cùng giống bố trí thực tế lớp học)
+  const podiumBottomHtml = `
+    <div class="grid grid-cols-12 gap-2 items-center pt-1">
+      <div class="col-span-8 sm:col-span-9 p-2.5 rounded-2xl bg-slate-900 text-white text-center shadow-xs">
+        <span class="text-xs font-black uppercase tracking-wider"><i class="fa-solid fa-chalkboard mr-1.5 text-sky-400"></i>BẢNG ĐEN • BỤC GIẢNG (PHÍA TRƯỚC LỚP)</span>
+      </div>
+      <div class="col-span-4 sm:col-span-3 p-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-center">
+        <span class="text-[10.5px] font-black uppercase text-amber-900 block"><i class="fa-solid fa-chalkboard-user mr-1"></i>Bàn GV • Cửa</span>
+      </div>
+    </div>
+  `;
+
+  // ==================== GIAO DIỆN ĐIỆN THOẠI (< 768px): CHIA THẺ TỪNG DÃY RỘNG RÃI ====================
+  const dayTabs = [
+    { key: "ALL", label: "Tất cả 4 Dãy" },
+    { key: "D1", label: "Dãy 1", idx: 0 },
+    { key: "D2", label: "Dãy 2", idx: 1 },
+    { key: "D3", label: "Dãy 3", idx: 2 },
+    { key: "D4", label: "Dãy 4", idx: 3 }
+  ];
+
+  const daysToRenderMobile = seatingMobileTeamTab === "ALL"
+    ? [0, 1, 2, 3]
+    : [dayTabs.find(t => t.key === seatingMobileTeamTab)?.idx ?? 0];
+
+  const mobileViewHtml = `
+    <div class="md:hidden space-y-3">
+      <div class="flex items-center gap-1.5 overflow-x-auto pb-1">
+        ${dayTabs.map(t => `
+          <button type="button" onclick="setSeatingMobileDayFilter('${t.key}')"
+            class="px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition ${seatingMobileTeamTab === t.key ? 'bg-indigo-700 text-white shadow-xs' : 'bg-white text-slate-700 border border-slate-200'}">
+            ${t.label}
+          </button>
+        `).join("")}
+      </div>
+
+      <div class="space-y-3">
+        ${daysToRenderMobile.map(dayIdx => {
+          const cLeft = dayIdx * 2;
+          const cRight = dayIdx * 2 + 1;
+          const orderedRows = [];
+          for (let r = totalRows - 1; r >= 0; r--) {
+            orderedRows.push({ r, banSo: totalRows - r });
+          }
+
+          return `
+            <div class="p-3.5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-2.5">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span class="text-xs font-black uppercase text-indigo-900 flex items-center gap-1.5">
+                  <span class="w-6 h-6 rounded-lg bg-indigo-600 text-white text-xs flex items-center justify-center font-black">${dayIdx + 1}</span>
+                  Dãy Bàn Số ${dayIdx + 1}
+                </span>
+                <span class="text-[10.5px] font-bold text-slate-400">Bàn 1 (Trên) → Bàn ${totalRows} (Dưới)</span>
+              </div>
+
+              <div class="space-y-2">
+                ${orderedRows.map(({ r, banSo }) => {
+                  const leftSeat = (layout[r] && layout[r][cLeft]) || { name: "", role: "" };
+                  const rightSeat = (layout[r] && layout[r][cRight]) || { name: "", role: "" };
+                  return `
+                    <div class="flex items-center gap-2">
+                      <span class="w-11 text-[10.5px] font-mono font-black text-slate-400 shrink-0">Bàn ${banSo}</span>
+                      <div class="flex-1 grid grid-cols-2 gap-2">
+                        ${renderSingleModernSeatCell(r, cLeft, leftSeat, layout)}
+                        ${renderSingleModernSeatCell(r, cRight, rightSeat, layout)}
+                      </div>
+                    </div>
+                  `;
+                }).join("")}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      ${podiumBottomHtml}
+    </div>
+  `;
+
+  // ==================== GIAO DIỆN MÁY TÍNH (>= 768px): 4 DÃY × 6 HÀNG THOÁNG GỌN (BÀN 6 TRÊN -> BÀN 1 GẦN BẢNG) ====================
+  const desktopRowsOrdered = [];
+  for (let r = 0; r < totalRows; r++) {
+    desktopRowsOrdered.push({ r, banSo: totalRows - r }); // r=0 -> Bàn 6, r=5 -> Bàn 1
+  }
+
+  const dayHeaderColors = [
+    "bg-blue-700 text-white",
+    "bg-purple-700 text-white",
+    "bg-emerald-700 text-white",
+    "bg-orange-600 text-white"
+  ];
+
+  const desktopViewHtml = `
+    <div class="hidden md:block space-y-2.5">
+      <!-- Tiêu đề 4 Dãy có Lối đi ở giữa -->
+      <div class="grid grid-cols-12 gap-2.5 items-center text-center">
+        <div class="col-span-5 grid grid-cols-2 gap-2.5">
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[0]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 1</div>
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[1]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 2</div>
+        </div>
+        <div class="col-span-2 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 font-black text-[10.5px] uppercase">
+          Lối đi
+        </div>
+        <div class="col-span-5 grid grid-cols-2 gap-2.5">
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[2]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 3</div>
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[3]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 4</div>
+        </div>
+      </div>
+
+      <!-- 6 Hàng bàn (Từ Bàn 6 cuối lớp xuống Bàn 1 sát bục giảng) -->
+      <div class="space-y-2">
+        ${desktopRowsOrdered.map(({ r, banSo }) => {
+          const renderDeskPair = (dayIdx) => {
+            const cLeft = dayIdx * 2;
+            const cRight = dayIdx * 2 + 1;
+            const leftSeat = (layout[r] && layout[r][cLeft]) || { name: "", role: "" };
+            const rightSeat = (layout[r] && layout[r][cRight]) || { name: "", role: "" };
+            return `
+              <div class="p-1.5 rounded-2xl bg-slate-50/90 border border-slate-200/90 grid grid-cols-2 gap-1.5">
+                ${renderSingleModernSeatCell(r, cLeft, leftSeat, layout)}
+                ${renderSingleModernSeatCell(r, cRight, rightSeat, layout)}
+              </div>
+            `;
+          };
+          return `
+            <div class="grid grid-cols-12 gap-2.5 items-center">
+              <div class="col-span-5 grid grid-cols-2 gap-2.5">
+                ${renderDeskPair(0)}
+                ${renderDeskPair(1)}
+              </div>
+              <div class="col-span-2 flex justify-center">
+                <span class="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-500 font-mono font-black text-[10.5px]">
+                  BÀN ${banSo}
+                </span>
+              </div>
+              <div class="col-span-5 grid grid-cols-2 gap-2.5">
+                ${renderDeskPair(2)}
+                ${renderDeskPair(3)}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      ${podiumBottomHtml}
+    </div>
+  `;
+
+  host.innerHTML = toolbarHtml + mobileViewHtml + desktopViewHtml;
+}
+
+// Khóa hàm renderSeatingChart vĩnh viễn để các file JS nạp sau (như seating-sdb.js) không ghi đè lại giao diện cũ
+const _lockedRenderSeatingChartFn = renderSeatingChart;
+try {
+  Object.defineProperty(window, "renderSeatingChart", {
+    configurable: false,
+    enumerable: true,
+    get: function() { return _lockedRenderSeatingChartFn; },
+    set: function() { /* Ngăn chặn ghi đè từ script cũ */ }
+  });
+} catch (e) {
+  window.renderSeatingChart = _lockedRenderSeatingChartFn;
+}
+
+const PUBLIC_API_ACTIONS = new Set([
+  "loginUser",
+  "reissueSessionToken",
+  "lookupStudent",
+  "getPublicFundStatement",
+  "changeStudentPassword"
+]);
+
+function updateCloudConnectionIndicator(isOnline, detailText = "") {
+  let badge = document.getElementById("globalCloudSyncStatusPill");
+  const topAnchor = document.getElementById("digitalClockText") || document.getElementById("currentUserRoleBadge");
+  if (!badge && topAnchor && topAnchor.parentElement) {
+    badge = document.createElement("span");
+    badge.id = "globalCloudSyncStatusPill";
+    badge.className = "ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1";
+    topAnchor.parentElement.appendChild(badge);
+  }
+  if (badge) {
+    if (isOnline) {
+      badge.className = "ml-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold inline-flex items-center gap-1";
+      badge.innerHTML = `<i class="fa-solid fa-cloud-check text-emerald-600"></i><span class="hidden sm:inline">Đồng bộ Cloud</span>`;
+    } else {
+      badge.className = "ml-1.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold inline-flex items-center gap-1";
+      badge.innerHTML = `<i class="fa-solid fa-wifi text-amber-600"></i><span>${escapeHtml(detailText || "Ngoại tuyến")}</span>`;
+    }
+  }
+}
+
+async function callApi(action, data = {}, method = "POST", isRetry = false) {
   try {
     const payload = PUBLIC_API_ACTIONS.has(action)
       ? { action, ...data }
@@ -3650,35 +4374,57 @@ async function callApi(action, data = {}, method = "POST") {
       resJson = await res.json();
     }
 
-    if (resJson && resJson.status === "unauthorized" && action !== "loginUser") {
-      appState.authToken = "";
-      localStorage.removeItem("10A12_AUTH_TOKEN");
-      appState.currentUser = null;
-      localStorage.removeItem("10A12_SESSION_USER");
-      const authScreen = document.getElementById("authScreen");
-      if (authScreen) authScreen.classList.remove("hidden");
-      const errBox = document.getElementById("loginErrorMsg");
-      if (errBox) {
-        errBox.innerText = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!";
-        errBox.classList.remove("hidden");
+    // Nếu token hết hạn hoặc chưa có token trên Sheet: tự động xin cấp lại token ngầm, KHÔNG BAO GIỜ tự văng đăng nhập
+    if (resJson && resJson.status === "unauthorized" && action !== "loginUser" && action !== "reissueSessionToken" && !isRetry && appState.currentUser) {
+      const renewed = await trySilentTokenExchange();
+      if (renewed) {
+        return await callApi(action, data, method, true);
       }
+      updateCloudConnectionIndicator(false, "Chờ đồng bộ");
+      return { status: "offline", message: "Đang lưu cục bộ (chưa khớp token máy chủ)." };
+    }
+
+    if (resJson && resJson.status === "success") {
+      updateCloudConnectionIndicator(true);
     }
     return resJson;
   } catch (err) {
     console.warn(`[Offline Mode] API ${action}:`, err);
+    updateCloudConnectionIndicator(false, "Mất mạng");
     return { status: "offline", message: "Đang lưu trữ ngoại tuyến." };
   }
 }
 
 async function syncWithCloud() {
-  if (!appState.currentUser || !appState.authToken) return null;
+  if (!appState.currentUser) return null;
+  if (!appState.authToken) {
+    await trySilentTokenExchange();
+  }
   const res = await callApi("getInitialData", {}, "GET");
   if (res && res.status === "success") {
+    // Nạp trước danh sách học sinh đã xóa từ Cloud để lọc sạch tuyệt đối
+    if (Array.isArray(res.deletedStudents)) appState.deletedStudents = res.deletedStudents;
+    if (res.config && res.config.deletedStudentsJson) {
+      const parsedDel = safeJsonParse(res.config.deletedStudentsJson, null);
+      if (Array.isArray(parsedDel)) appState.deletedStudents = parsedDel;
+    }
+    localStorage.setItem("10A12_DELETED_STUDENTS", JSON.stringify(appState.deletedStudents || []));
+
     if (Array.isArray(res.students) && res.students.length > 0) {
-      appState.students = res.students;
+      const passOverrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+      res.students.forEach(st => {
+        if (st.id && st.matKhau && st.matKhau !== "123456") {
+          passOverrides[st.id] = String(st.matKhau);
+        }
+      });
+      localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(passOverrides));
+      appState.students = normalizeStudentRosterAccounts(res.students, appState.deletedStudents);
     } else if (appState.roleLevel === "GVCN" && appState.students.length > 0 && !appState._autoSeededRosterOnce) {
       appState._autoSeededRosterOnce = true;
+      appState.students = normalizeStudentRosterAccounts(appState.students, appState.deletedStudents);
       callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+    } else {
+      appState.students = normalizeStudentRosterAccounts(appState.students, appState.deletedStudents);
     }
     if (Array.isArray(res.violations)) appState.violations = res.violations;
     if (Array.isArray(res.campaigns) && res.campaigns.length > 0) appState.campaigns = res.campaigns;
@@ -3718,6 +4464,9 @@ async function syncWithCloud() {
     if (res.config && typeof res.config === "object") {
       if (res.config.allowStudentLeaderEdit !== undefined) {
         appState.allowStudentLeaderEdit = (res.config.allowStudentLeaderEdit === true || String(res.config.allowStudentLeaderEdit).toLowerCase() === "true");
+      }
+      if (res.config.gvcnPassword && !localStorage.getItem("10A12_GVCN_PASS_DIRTY")) {
+        localStorage.setItem("10A12_GVCN_PASSWORD", String(res.config.gvcnPassword));
       }
       if (res.config.customTicker !== undefined) appState.customTicker = String(res.config.customTicker || "");
       if (res.config.specialViolationReportsJson) {
@@ -3779,11 +4528,135 @@ async function syncWithCloud() {
 
     if (typeof recalculateFundSummary === "function") recalculateFundSummary();
     buildAutoWeekDropdown();
-    applyRolePermissions();
+    applyRolePermissions(false);
     saveStateToLocal();
     renderAllSections();
   }
   return res;
+}
+
+// ==================== BỘ MÁY ĐỔI MẬT KHẨU ĐỒNG BỘ VĨNH VIỄN (GVCN & HỌC SINH) ====================
+async function handleUnifiedPasswordUpdate(newPassword, confirmPassword) {
+  if (!appState.currentUser) {
+    alert("Vui lòng đăng nhập trước khi đổi mật khẩu!");
+    return false;
+  }
+  const p1 = String(newPassword || "").trim();
+  const p2 = String(confirmPassword || "").trim();
+  if (!p1 || p1.length < 4) {
+    alert("Mật khẩu mới phải có ít nhất 4 ký tự!");
+    return false;
+  }
+  if (p2 && p1 !== p2) {
+    alert("Mật khẩu xác nhận không khớp!");
+    return false;
+  }
+
+  if (appState.roleLevel === "GVCN") {
+    localStorage.setItem("10A12_GVCN_PASSWORD", p1);
+    localStorage.setItem("10A12_GVCN_PASS_DIRTY", "1");
+    const res = await callApi("saveConfig", { gvcnPassword: p1 }, "POST");
+    if (res && res.status === "success") {
+      localStorage.removeItem("10A12_GVCN_PASS_DIRTY");
+      alert("Đã đổi mật khẩu GVCN và lưu vĩnh viễn lên Google Sheets!");
+    } else {
+      alert("Đã lưu mật khẩu mới trên thiết bị này (sẽ tự đồng bộ lên Google Sheets khi có mạng)!");
+    }
+    return true;
+  }
+
+  const stId = appState.currentUser.studentId;
+  if (!stId) return false;
+
+  const overrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+  overrides[stId] = p1;
+  localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(overrides));
+
+  const st = appState.students.find(s => s.id === stId);
+  if (st) st.matKhau = p1;
+  saveStateToLocal();
+
+  const res = await callApi("changeStudentPassword", { studentId: stId, newPassword: p1 }, "POST");
+  if (res && res.status === "success") {
+    alert("Đã đổi mật khẩu cá nhân và đồng bộ lên hệ thống thành công!");
+  } else {
+    alert("Đã lưu mật khẩu mới trên thiết bị của bạn!");
+  }
+  return true;
+}
+
+function renderPasswordChangeWidgets() {
+  // 1. Khung đổi mật khẩu cho Học sinh & Ban cán sự trong Tab Cá nhân (#tab-ca-nhan)
+  const tabCaNhan = document.getElementById("tab-ca-nhan");
+  if (tabCaNhan && appState.currentUser && appState.currentUser.studentId && !document.getElementById("studentPasswordChangeCard")) {
+    const card = document.createElement("div");
+    card.id = "studentPasswordChangeCard";
+    card.className = "mt-4 p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3";
+    card.innerHTML = `
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div>
+          <h4 class="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-1.5">
+            <i class="fa-solid fa-key text-amber-600"></i> Đổi Mật Khẩu Đăng Nhập Cá Nhân
+          </h4>
+          <p class="text-[11px] text-slate-500">Mật khẩu mới được lưu đồng bộ trên máy chủ, không bị đặt lại khi tải lại trang</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+        <input type="password" id="stNewPassInput1" placeholder="Nhập mật khẩu mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <input type="password" id="stNewPassInput2" placeholder="Nhập lại mật khẩu mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <button type="button" onclick="submitStudentPasswordCard()" class="py-2 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black transition">
+          <i class="fa-solid fa-shield-halved mr-1"></i> Cập Nhật Mật Khẩu
+        </button>
+      </div>
+    `;
+    tabCaNhan.appendChild(card);
+  }
+
+  // 2. Khung đổi mật khẩu cho GVCN trong Tab Cài đặt (#tab-cai-dat)
+  const tabCaiDat = document.getElementById("tab-cai-dat");
+  if (tabCaiDat && appState.roleLevel === "GVCN" && !document.getElementById("gvcnPasswordChangeCard")) {
+    const card = document.createElement("div");
+    card.id = "gvcnPasswordChangeCard";
+    card.className = "p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3 mb-4";
+    card.innerHTML = `
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div>
+          <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-key text-amber-600"></i> Đổi Mật Khẩu Quản Trị GVCN
+          </h3>
+          <p class="text-[11px] text-slate-500">Lưu vĩnh viễn lên Google Sheets (Sheet CauHinh) để đăng nhập trên mọi thiết bị</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+        <input type="password" id="gvcnNewPassInput1" placeholder="Mật khẩu GVCN mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <input type="password" id="gvcnNewPassInput2" placeholder="Xác nhận mật khẩu mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <button type="button" onclick="submitGvcnPasswordCard()" class="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black transition">
+          <i class="fa-solid fa-floppy-disk mr-1"></i> Lưu Mật Khẩu GVCN
+        </button>
+      </div>
+    `;
+    tabCaiDat.appendChild(card);
+  }
+}
+
+async function submitStudentPasswordCard() {
+  const p1 = document.getElementById("stNewPassInput1")?.value || "";
+  const p2 = document.getElementById("stNewPassInput2")?.value || "";
+  const ok = await handleUnifiedPasswordUpdate(p1, p2);
+  if (ok) {
+    if (document.getElementById("stNewPassInput1")) document.getElementById("stNewPassInput1").value = "";
+    if (document.getElementById("stNewPassInput2")) document.getElementById("stNewPassInput2").value = "";
+  }
+}
+
+async function submitGvcnPasswordCard() {
+  const p1 = document.getElementById("gvcnNewPassInput1")?.value || "";
+  const p2 = document.getElementById("gvcnNewPassInput2")?.value || "";
+  const ok = await handleUnifiedPasswordUpdate(p1, p2);
+  if (ok) {
+    if (document.getElementById("gvcnNewPassInput1")) document.getElementById("gvcnNewPassInput1").value = "";
+    if (document.getElementById("gvcnNewPassInput2")) document.getElementById("gvcnNewPassInput2").value = "";
+  }
 }
 
 async function refreshData() {
@@ -3837,6 +4710,7 @@ function switchTab(tabId) {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
   }
   if (tabId === "tab-cai-dat" && typeof renderSettingsTab === "function") renderSettingsTab();
   if (tabId === "tab-danh-sach" && typeof renderStudentCards === "function") renderStudentCards(appState.students);
@@ -3869,6 +4743,7 @@ function renderAllSections() {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
   if (appState.currentUser && appState.currentUser.studentId && typeof renderStudentPortal === "function") renderStudentPortal();
 }
 
@@ -3892,6 +4767,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
   setInterval(() => {
     checkAndPerformClientMondayRollover();
     updateCelebrationTicker();
@@ -3906,6 +4782,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
   }, 60000);
   setInterval(updateLiveDashboardEngine, 1000);
   if (appState.currentUser && appState.authToken) {
@@ -3921,6 +4798,7 @@ window.addEventListener("load", () => {
   renderYearEndConductGradingPanel();
   renderProfileCorrectionsInbox();
   renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
   renderDeletedStudentsArchiveSection();
   if (typeof window.deleteStudent === "function" && !window.deleteStudent._wrappedWithReason) {
     const wrapped = function(studentId) {
@@ -3935,5 +4813,42 @@ window.addEventListener("load", () => {
     };
     wrappedCur._wrappedWithReason = true;
     window.deleteCurrentStudent = wrappedCur;
+  }
+});
+
+window.addEventListener("load", () => {
+  if (typeof renderSeatingChart === "function") {
+    renderSeatingChart();
+  }
+});
+
+document.addEventListener("click", (ev) => {
+  const btn = ev.target && ev.target.closest ? ev.target.closest("#btn-tab-so-do-lop, #btn-side-tab-so-do-lop") : null;
+  if (btn) {
+    setTimeout(() => _lockedRenderSeatingChartFn(), 30);
+  }
+});
+
+// ==================== CHẶN KÍCH HOẠT KÉP NÚT CỔNG TRA CỨU PH & HS (CAPTURE PHASE) ====================
+document.addEventListener("click", (ev) => {
+  const target = ev.target && ev.target.closest ? ev.target.closest("a, button") : null;
+  if (!target) return;
+  const href = target.getAttribute("href") || "";
+  const onClick = target.getAttribute("onclick") || "";
+  const label = (target.innerText || "").trim();
+  if (
+    href.includes("tracuu.html") ||
+    onClick.includes("copyParentLookupPortalLink") ||
+    onClick.includes("openParentLookupPortal") ||
+    label.includes("Cổng Tra Cứu")
+  ) {
+    openParentLookupPortal(ev);
+  }
+}, true);
+
+// Khởi chạy đồng bộ ngầm ngay khi mở trang nếu đã có phiên đăng nhập (kể cả khi chưa có token)
+window.addEventListener("load", () => {
+  if (appState.currentUser && !appState.authToken) {
+    syncWithCloud();
   }
 });
