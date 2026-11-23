@@ -1,0 +1,6001 @@
+/**
+ * ============================================================================
+ * SỔ TAY CHỦ NHIỆM ĐIỆN TỬ 10A12 (K58-QT) - HẠT NHÂN HỆ THỐNG (JS/CORE.JS)
+ * Tác giả: GVCN ThS. Trần Dương Quốc Mẫn
+ * Phiên bản: 14.2 (Tự động hóa 35 Tuần, 7 Ca học thực tế, RBAC & Live Sync)
+ * ============================================================================
+ */
+
+const APP_CODE_VERSION = "17.0_COMPLETE_MASTER";
+
+(function handleCleanCodeVersionUpgrade() {
+  try {
+    const prevVer = localStorage.getItem("10A12_APP_CODE_VERSION");
+    if (prevVer !== APP_CODE_VERSION) {
+      // Giữ lại phiên đăng nhập, link script, mật khẩu đã đổi và danh sách đã xóa; làm sạch cache cũ bị lệch
+      const keepKeys = new Set([
+        "10A12_SCRIPT_URL",
+        "10A12_SESSION_USER",
+        "10A12_AUTH_TOKEN",
+        "10A12_GVCN_PASSWORD",
+        "10A12_GVCN_PASS_DIRTY",
+        "10A12_STUDENT_PASS_OVERRIDES",
+        "10A12_DELETED_STUDENTS",
+        "10A12_SCHOOL_START_DATE",
+        "10A12_CONDUCT_QUOTA_PCT",
+        "10A12_SEATING_SHORT_NAME"
+      ]);
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith("10A12_") && !keepKeys.has(k)) {
+          localStorage.removeItem(k);
+        }
+      });
+      localStorage.setItem("10A12_APP_CODE_VERSION", APP_CODE_VERSION);
+    }
+  } catch (e) {}
+})();
+
+function filterOutDeletedStudentsFromList(list, deletedArchiveList) {
+  if (!Array.isArray(list)) return [];
+  const archives = Array.isArray(deletedArchiveList)
+    ? deletedArchiveList
+    : safeJsonParse(localStorage.getItem("10A12_DELETED_STUDENTS"), []);
+  const deletedIds = new Set();
+  const deletedNames = new Set();
+  archives.forEach(item => {
+    const st = item && item.studentData ? item.studentData : item;
+    if (st && st.id) deletedIds.add(String(st.id).trim());
+    if (st && st.hoTen) deletedNames.add(removeVietnameseTones(st.hoTen));
+  });
+  return list.filter(s => {
+    if (!s) return false;
+    const idStr = String(s.id || "").trim();
+    const nameStr = removeVietnameseTones(s.hoTen || "");
+    if (idStr && deletedIds.has(idStr)) return false;
+    if (nameStr && deletedNames.has(nameStr)) return false;
+    return true;
+  });
+}
+
+const GAS_API_URL = localStorage.getItem("10A12_SCRIPT_URL") || "https://script.google.com/macros/s/AKfycby1bzee0jofemhb1lTYoi_wIdFpd_jneRKW8TtzUDyrtKGdkfk6K0OGErPfyKsjlB9hfQ/exec";
+
+// ==================== 1. CHUẨN HÓA TIẾNG VIỆT & TIỆN ÍCH AN TOÀN ====================
+function removeVietnameseTones(str) {
+  if (!str) return "";
+  str = String(str);
+  if (typeof str.normalize === "function") {
+    str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  str = str.toLowerCase();
+  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+  str = str.replace(/đ/g, "d");
+  str = str.replace(/[^a-z0-9]/g, "");
+  return str.trim();
+}
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str);
+}
+
+function safeMediaSrc(src) {
+  const s = String(src || "").trim();
+  if (!s) return "";
+  if (/^(data:(image|video)\/[a-z0-9.+-]+;base64,|https?:\/\/|tkb_10a12\.png|\.?\/)/i.test(s)) return s;
+  return "";
+}
+
+function parseScore(val, fallback = 100) {
+  if (val === null || val === undefined || val === "") return fallback;
+  if (val instanceof Date || typeof val === "object") return fallback;
+  const str = String(val).trim();
+  if (!str || /^\d{4}-\d{2}-\d{2}/.test(str) || /^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) return fallback;
+  const cleaned = str.replace(/[đdĐ\s,]/g, "");
+  const num = Number(cleaned);
+  if (!Number.isFinite(num) || Math.abs(num) > 2000) return fallback;
+  return Math.round(num * 100) / 100;
+}
+
+function safeJsonParse(raw, fallback) {
+  try {
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function getLocalDateKey(dateObj = new Date()) {
+  const d = (dateObj instanceof Date) ? dateObj : new Date(dateObj);
+  if (isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatDateVN(dateObj = new Date()) {
+  const d = (dateObj instanceof Date) ? dateObj : new Date(dateObj);
+  if (isNaN(d.getTime())) return "";
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+function getWeekNumberFromDate(dateObj = new Date()) {
+  const d = (dateObj instanceof Date) ? dateObj : new Date(dateObj);
+  if (isNaN(d.getTime())) return getAutoSchoolWeek();
+  const localMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  SCHOOL_YEAR_START_MONDAY = getSchoolYearStartMonday();
+  const diffTime = localMidnight.getTime() - SCHOOL_YEAR_START_MONDAY.getTime();
+  const diffWeeks = Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return Math.min(35, Math.max(1, diffWeeks));
+}
+
+function compressImageDataUrl(file, maxWidth = 1280, quality = 0.78) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Không đọc được tệp ảnh."));
+    reader.onload = (ev) => {
+      const rawDataUrl = ev.target.result;
+      if (typeof document === "undefined" || !String(rawDataUrl).startsWith("data:image/")) {
+        resolve(rawDataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onerror = () => resolve(rawDataUrl);
+      img.onload = () => {
+        let targetW = img.width || maxWidth;
+        let targetH = img.height || maxWidth;
+        if (targetW > maxWidth) {
+          targetH = Math.round((targetH * maxWidth) / targetW);
+          targetW = maxWidth;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(rawDataUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        try {
+          const compressed = canvas.toDataURL("image/jpeg", quality);
+          resolve(compressed.length < rawDataUrl.length ? compressed : rawDataUrl);
+        } catch (err) {
+          resolve(rawDataUrl);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ==================== 2. DANH SÁCH 45 HỌC SINH MẪU ====================
+const DEFAULT_STUDENTS_10A12 = [
+  // TỔ 1
+  { id: "HS01", hoTen: "Nguyễn Tấn An", to: "Tổ 1", chucVu: "Lớp trưởng", diemThiDua: 100, soCCCD: "052206001234", ngayCapCCCD: "15/05/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Nguyễn Văn Hùng", ngheNghiepBa: "Cán bộ công chức", sdtBa: "0905123456", tenMe: "Trần Thị Mai", ngheNghiepMe: "Giáo viên", sdtMe: "0905123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS02", hoTen: "Võ Hiền Đức", to: "Tổ 1", chucVu: "Tổ trưởng T1", diemThiDua: 100, soCCCD: "052206001235", ngayCapCCCD: "10/08/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Võ Văn Nam", ngheNghiepBa: "Kinh doanh tự do", sdtBa: "0914123456", tenMe: "Lê Thị Lan", ngheNghiepMe: "Kế toán", sdtMe: "0914123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS03", hoTen: "Lê Thành Huy", to: "Tổ 1", chucVu: "Cờ đỏ", diemThiDua: 100, soCCCD: "052206001236", ngayCapCCCD: "12/06/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Lê Văn Tuấn", ngheNghiepBa: "Kỹ sư xây dựng", sdtBa: "0983123456", tenMe: "Phạm Thị Hoa", ngheNghiepMe: "Nội trợ", sdtMe: "0983123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS04", hoTen: "Trần Hiếu Trung", to: "Tổ 1", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001237", ngayCapCCCD: "20/09/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Trần Văn Bình", ngheNghiepBa: "Làm nông", sdtBa: "0977123456", tenMe: "Nguyễn Thị Thảo", ngheNghiepMe: "Làm nông", sdtMe: "0977123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS05", hoTen: "Đặng Thị Hiền Trân", to: "Tổ 1", chucVu: "Lớp phó VTM", diemThiDua: 100, soCCCD: "052206001238", ngayCapCCCD: "14/04/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Đặng Văn Phúc", ngheNghiepBa: "Bác sĩ", sdtBa: "0935123456", tenMe: "Bùi Thị Ngọc", ngheNghiepMe: "Dược sĩ", sdtMe: "0935123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS06", hoTen: "Bùi Huỳnh Như Ý", to: "Tổ 1", chucVu: "Ban Thi đua", diemThiDua: 100, soCCCD: "052206001239", ngayCapCCCD: "18/07/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Bùi Văn Thành", ngheNghiepBa: "Kinh doanh", sdtBa: "0908123456", tenMe: "Trương Thị Thu", ngheNghiepMe: "Kinh doanh", sdtMe: "0908123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS07", hoTen: "Nguyễn Thị Thanh Trà", to: "Tổ 1", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001240", ngayCapCCCD: "22/11/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Nguyễn Văn Đức", ngheNghiepBa: "Tài xế", sdtBa: "0918123456", tenMe: "Lê Thị Yến", ngheNghiepMe: "May mặc", sdtMe: "0918123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS08", hoTen: "Phan Thị Hà My", to: "Tổ 1", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001241", ngayCapCCCD: "05/03/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Phan Văn Long", ngheNghiepBa: "Làm nông", sdtBa: "0949123456", tenMe: "Đỗ Thị Phượng", ngheNghiepMe: "Nội trợ", sdtMe: "0949123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS09", hoTen: "Huỳnh Minh Đức", to: "Tổ 1", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001242", ngayCapCCCD: "11/09/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Huỳnh Văn Hải", ngheNghiepBa: "Thợ cơ khí", sdtBa: "0962123456", tenMe: "Ngô Thị Cúc", ngheNghiepMe: "Kinh doanh nhỏ", sdtMe: "0962123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS10", hoTen: "Nguyễn Văn Nhuận", to: "Tổ 1", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001243", ngayCapCCCD: "19/10/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Nguyễn Văn Quang", ngheNghiepBa: "Làm vườn", sdtBa: "0972123456", tenMe: "Lý Thị Đào", ngheNghiepMe: "Nội trợ", sdtMe: "0972123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS11", hoTen: "Đinh Văn Khoa", to: "Tổ 1", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001244", ngayCapCCCD: "25/08/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Đinh Văn Sang", ngheNghiepBa: "Làm nông", sdtBa: "0989123456", tenMe: "Trần Thị Bé", ngheNghiepMe: "Làm nông", sdtMe: "0989123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+
+  // TỔ 2
+  { id: "HS12", hoTen: "Phan Ngọc Thuỳ", to: "Tổ 2", chucVu: "Tổ trưởng T2", diemThiDua: 100, soCCCD: "052206001245", ngayCapCCCD: "14/06/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Phan Văn Khoát", ngheNghiepBa: "Giáo viên", sdtBa: "0903123456", tenMe: "Võ Thị Lệ", ngheNghiepMe: "Y sĩ", sdtMe: "0903123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS13", hoTen: "Bùi Trần Khánh Nhi", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001246", ngayCapCCCD: "17/05/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Bùi Văn Thuận", ngheNghiepBa: "Kỹ sư điện", sdtBa: "0913123456", tenMe: "Trần Thị Xuân", ngheNghiepMe: "Kinh doanh", sdtMe: "0913123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS14", hoTen: "Trần Anh Thư", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001247", ngayCapCCCD: "09/02/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Trần Văn Hòa", ngheNghiepBa: "Làm nông", sdtBa: "0923123456", tenMe: "Nguyễn Thị Lài", ngheNghiepMe: "Nội trợ", sdtMe: "0923123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS15", hoTen: "Lê Thị Trúc Phượng", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001248", ngayCapCCCD: "18/03/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Lê Văn Tiến", ngheNghiepBa: "Thợ may", sdtBa: "0933123456", tenMe: "Đặng Thị Sen", ngheNghiepMe: "Buôn bán", sdtMe: "0933123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS16", hoTen: "Nguyễn Bảo Khôi", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001249", ngayCapCCCD: "29/07/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Nguyễn Văn Dũng", ngheNghiepBa: "Xây dựng", sdtBa: "0943123456", tenMe: "Hà Thị Hồng", ngheNghiepMe: "Nội trợ", sdtMe: "0943123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS17", hoTen: "Trương Hà Quý", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001250", ngayCapCCCD: "12/12/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Trương Văn Bảy", ngheNghiepBa: "Làm nông", sdtBa: "0953123456", tenMe: "Vũ Thị Vân", ngheNghiepMe: "Làm nông", sdtMe: "0953123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS18", hoTen: "Ngô Văn Vỹ", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001251", ngayCapCCCD: "24/04/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Ngô Văn Kiệt", ngheNghiepBa: "Cơ khí", sdtBa: "0963123456", tenMe: "Dương Thị Huệ", ngheNghiepMe: "Buôn bán", sdtMe: "0963123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS19", hoTen: "Đỗ Huy Vũ", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001252", ngayCapCCCD: "08/06/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Đỗ Văn Toàn", ngheNghiepBa: "Kinh doanh", sdtBa: "0973123456", tenMe: "Lâm Thị Hạnh", ngheNghiepMe: "Kế toán", sdtMe: "0973123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS20", hoTen: "Nguyễn Thái Hoàng", to: "Tổ 2", chucVu: "Lớp phó Lao động", diemThiDua: 100, soCCCD: "052206001253", ngayCapCCCD: "16/01/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Nguyễn Văn Cường", ngheNghiepBa: "Công chức", sdtBa: "0984123456", tenMe: "Lê Thị Thảo", ngheNghiepMe: "Giáo viên", sdtMe: "0984123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS21", hoTen: "Võ Thị Kim Nhung", to: "Tổ 2", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001254", ngayCapCCCD: "21/05/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Võ Văn Thắng", ngheNghiepBa: "Làm nông", sdtBa: "0994123456", tenMe: "Trần Thị Diệu", ngheNghiepMe: "Nội trợ", sdtMe: "0994123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS22", hoTen: "Nguyễn My Su", to: "Tổ 2", chucVu: "Thủ quỹ lớp", diemThiDua: 100, soCCCD: "052206001255", ngayCapCCCD: "30/03/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Nguyễn Văn Lộc", ngheNghiepBa: "Kinh doanh vật tư", sdtBa: "0915123456", tenMe: "Phan Thị Loan", ngheNghiepMe: "Kế toán", sdtMe: "0915123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+
+  // TỔ 3
+  { id: "HS23", hoTen: "Trương Đức Tài", to: "Tổ 3", chucVu: "Tổ trưởng T3", diemThiDua: 100, soCCCD: "052206001256", ngayCapCCCD: "11/04/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Trương Văn Khang", ngheNghiepBa: "Cán bộ huyện", sdtBa: "0906123456", tenMe: "Lý Thị Trinh", ngheNghiepMe: "Nhân viên bưu điện", sdtMe: "0906123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS24", hoTen: "Đỗ Quyết Tâm", to: "Tổ 3", chucVu: "Lớp phó Học tập", diemThiDua: 100, soCCCD: "052206001257", ngayCapCCCD: "04/09/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Đỗ Văn Nghĩa", ngheNghiepBa: "Bác sĩ thú y", sdtBa: "0916123456", tenMe: "Vũ Thị Quỳnh", ngheNghiepMe: "Giáo viên mầm non", sdtMe: "0916123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS25", hoTen: "Lê Quốc Hưng", to: "Tổ 3", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001258", ngayCapCCCD: "14/10/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Lê Văn Sơn", ngheNghiepBa: "Thợ hàn", sdtBa: "0926123456", tenMe: "Tạ Thị Tuyết", ngheNghiepMe: "Làm nông", sdtMe: "0926123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS26", hoTen: "Nguyễn Hữu Phong", to: "Tổ 3", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001259", ngayCapCCCD: "20/06/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Nguyễn Văn Hùng", ngheNghiepBa: "Lái xe tải", sdtBa: "0936123456", tenMe: "Trần Thị Thu", ngheNghiepMe: "Nội trợ", sdtMe: "0936123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS27", hoTen: "Vũ Đồng Tiến", to: "Tổ 3", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001260", ngayCapCCCD: "28/01/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Vũ Văn Lương", ngheNghiepBa: "Làm nông", sdtBa: "0946123456", tenMe: "Mai Thị Hằng", ngheNghiepMe: "Làm nông", sdtMe: "0946123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS28", hoTen: "Phạm Khởi Nghĩa", to: "Tổ 3", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001261", ngayCapCCCD: "07/07/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Phan Văn Tân", ngheNghiepBa: "Xây dựng", sdtBa: "0956123456", tenMe: "Hồ Thị Nga", ngheNghiepMe: "Nội trợ", sdtMe: "0956123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS29", hoTen: "Hoàng Đức Quang", to: "Tổ 3", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001262", ngayCapCCCD: "16/03/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Hoàng Văn Tuấn", ngheNghiepBa: "Thợ mộc", sdtBa: "0966123456", tenMe: "Đoàn Thị Gấm", ngheNghiepMe: "Buôn bán nhỏ", sdtMe: "0966123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS30", hoTen: "Lý Bảo Nam", to: "Tổ 3", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001263", ngayCapCCCD: "13/05/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Lý Văn Minh", ngheNghiepBa: "Làm nông", sdtBa: "0976123456", tenMe: "Cao Thị Mận", ngheNghiepMe: "Làm nông", sdtMe: "0976123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS31", hoTen: "Trần Thảo Ngân", to: "Tổ 3", chucVu: "Bí thư Chi đoàn", diemThiDua: 100, soCCCD: "052206001264", ngayCapCCCD: "10/02/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Trần Văn Bình", ngheNghiepBa: "Kỹ sư nông nghiệp", sdtBa: "0986123456", tenMe: "Lê Thị Bích", ngheNghiepMe: "Cán bộ y tế", sdtMe: "0986123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS32", hoTen: "Đặng Nhã Trân", to: "Tổ 3", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001265", ngayCapCCCD: "24/11/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Đặng Văn Lâm", ngheNghiepBa: "Kinh doanh gia đình", sdtBa: "0996123456", tenMe: "Nguyễn Thị Diễm", ngheNghiepMe: "Kinh doanh", sdtMe: "0996123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+
+  // TỔ 4
+  { id: "HS34", hoTen: "Trần Nguyễn Gia Bảo", to: "Tổ 4", chucVu: "Tổ trưởng T4", diemThiDua: 100, soCCCD: "052206001267", ngayCapCCCD: "25/03/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Trần Văn Trí", ngheNghiepBa: "Công an viên", sdtBa: "0907123456", tenMe: "Nguyễn Thị Phương", ngheNghiepMe: "Giáo viên", sdtMe: "0907123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS35", hoTen: "Huỳnh Minh Nhựt", to: "Tổ 4", chucVu: "Cờ đỏ", diemThiDua: 100, soCCCD: "052206001268", ngayCapCCCD: "19/04/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: true, ngayVaoDoan: "26/03/2026", tenBa: "Huỳnh Văn Thanh", ngheNghiepBa: "Thợ may", sdtBa: "0917223456", tenMe: "Võ Thị Hằng", ngheNghiepMe: "Làm nông", sdtMe: "0917223457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS36", hoTen: "Dương Thành Danh", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001269", ngayCapCCCD: "11/06/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Dương Văn Quyền", ngheNghiepBa: "Kỹ thuật viễn thông", sdtBa: "0927123456", tenMe: "Phan Thị Oanh", ngheNghiepMe: "Nội trợ", sdtMe: "0927123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS37", hoTen: "Nguyễn Quốc Phong", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001270", ngayCapCCCD: "18/09/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Nguyễn Văn Hùng", ngheNghiepBa: "Làm vườn", sdtBa: "0937123456", tenMe: "Đinh Thị Thắm", ngheNghiepMe: "Nội trợ", sdtMe: "0937123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS38", hoTen: "Bùi Thị Bảo Trâm", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001271", ngayCapCCCD: "09/01/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Bùi Văn Hậu", ngheNghiepBa: "Lái xe", sdtBa: "0947123456", tenMe: "Lê Thị Hồng", ngheNghiepMe: "Làm nông", sdtMe: "0947123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS39", hoTen: "Lê Thảo Quyên", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001272", ngayCapCCCD: "15/07/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Lê Văn Tự", ngheNghiepBa: "Làm nông", sdtBa: "0957123456", tenMe: "Trần Thị Kim", ngheNghiepMe: "Làm nông", sdtMe: "0957123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS40", hoTen: "Đặng Bảo Sương", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001273", ngayCapCCCD: "21/08/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Đặng Văn Quý", ngheNghiepBa: "Cơ khí", sdtBa: "0967123456", tenMe: "Hồ Thị Nhung", ngheNghiepMe: "Nội trợ", sdtMe: "0967123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS41", hoTen: "Ngô Trí Dũng", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001274", ngayCapCCCD: "14/02/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Ngô Văn Thuận", ngheNghiepBa: "Thợ nề", sdtBa: "0977223456", tenMe: "Nguyễn Thị Lụa", ngheNghiepMe: "Làm nông", sdtMe: "0977223457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS42", hoTen: "Phan Tấn Sang", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001275", ngayCapCCCD: "02/10/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Phan Văn Trung", ngheNghiepBa: "Làm nông", sdtBa: "0987123456", tenMe: "Lâm Thị Cẩm", ngheNghiepMe: "Làm nông", sdtMe: "0987123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS43", hoTen: "Vũ Thanh Khiêm", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001276", ngayCapCCCD: "27/05/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Vũ Văn Lộc", ngheNghiepBa: "Tài xế", sdtBa: "0997123456", tenMe: "Bùi Thị Mai", ngheNghiepMe: "Nội trợ", sdtMe: "0997123457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS44", hoTen: "Trần Minh Quân", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001277", ngayCapCCCD: "19/12/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Trần Văn Huy", ngheNghiepBa: "Làm nông", sdtBa: "0908223456", tenMe: "Võ Thị Bích", ngheNghiepMe: "Làm nông", sdtMe: "0908223457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" },
+  { id: "HS45", hoTen: "Nguyễn Xuân Đông", to: "Tổ 4", chucVu: "Thành viên", diemThiDua: 100, soCCCD: "052206001278", ngayCapCCCD: "08/11/2023", noiCapCCCD: "Cục Cảnh sát QLHC về TTXH", laDoanVien: false, ngayVaoDoan: "", tenBa: "Nguyễn Văn Chiến", ngheNghiepBa: "Kinh doanh tự do", sdtBa: "0918223456", tenMe: "Dương Thị Thuỷ", ngheNghiepMe: "Kế toán", sdtMe: "0918223457", diaChi: "Tây Sơn, Gia Lai", matKhau: "123456" }
+];
+
+// ==================== 3. SƠ ĐỒ LỚP HỌC (4 DÃY - 6 HÀNG) ====================
+const DEFAULT_SEATING_LAYOUT = [
+  // Hàng 6 (Cuối lớp)
+  [
+    { name: "Ngô Trí Dũng", role: "" }, { name: "", role: "" },
+    { name: "Phan Tấn Sang", role: "" }, { name: "Vũ Thanh Khiêm", role: "" },
+    { name: "Trần Minh Quân", role: "" }, { name: "", role: "" },
+    { name: "", role: "" }, { name: "Nguyễn Xuân Đông", role: "" }
+  ],
+  // Hàng 5
+  [
+    { name: "Trần Nguyễn Gia Bảo", role: "TT T4" }, { name: "Huỳnh Minh Nhựt", role: "Cờ đỏ" },
+    { name: "Dương Thành Danh", role: "" }, { name: "Nguyễn Quốc Phong", role: "" },
+    { name: "Bùi Thị Bảo Trâm", role: "" }, { name: "Lê Thảo Quyên", role: "" },
+    { name: "", role: "" }, { name: "Đặng Bảo Sương", role: "" }
+  ],
+  // Hàng 4
+  [
+    { name: "Đặng Thị Hiền Trân", role: "Phó VTM" }, { name: "Bùi Huỳnh Như Ý", role: "Thi đua" },
+    { name: "Nguyễn Thị Thanh Trà", role: "" }, { name: "Phan Thị Hà My", role: "" },
+    { name: "Võ Hiền Đức", role: "TT T1" }, { name: "Lê Thành Huy", role: "Cờ đỏ" },
+    { name: "Nguyễn Tấn An", role: "Lớp trưởng" }, { name: "Trần Hiếu Trung", role: "" }
+  ],
+  // Hàng 3
+  [
+    { name: "Nguyễn My Su", role: "Thủ quỹ" }, { name: "Đặng Nhã Trân", role: "" },
+    { name: "Trần Thảo Ngân", role: "Bí thư" }, { name: "Võ Thị Kim Nhung", role: "" },
+    { name: "Đinh Văn Khoa", role: "" }, { name: "Nguyễn Thái Hoàng", role: "Phó LĐ" },
+    { name: "Huỳnh Minh Đức", role: "" }, { name: "Nguyễn Văn Nhuận", role: "" }
+  ],
+  // Hàng 2
+  [
+    { name: "Ngô Văn Vỹ", role: "" }, { name: "Đỗ Huy Vũ", role: "" },
+    { name: "Nguyễn Bảo Khôi", role: "" }, { name: "Trương Hà Quý", role: "" },
+    { name: "Bùi Trần Khánh Nhi", role: "" }, { name: "Trần Anh Thư", role: "" },
+    { name: "Lê Thị Trúc Phượng", role: "" }, { name: "Phan Ngọc Thuỳ", role: "TT T2" }
+  ],
+  // Hàng 1 (Sát bục giảng và bàn GV)
+  [
+    { name: "Lê Quốc Hưng", role: "" }, { name: "Nguyễn Hữu Phong", role: "" },
+    { name: "Đỗ Quyết Tâm", role: "Phó HT" }, { name: "Trương Đức Tài", role: "TT T3" },
+    { name: "Vũ Đồng Tiến", role: "" }, { name: "Phạm Khởi Nghĩa", role: "" },
+    { name: "Hoàng Đức Quang", role: "" }, { name: "Lý Bảo Nam", role: "" }
+  ]
+];
+
+// ==================== 4. CẤU HÌNH THỜI KHÓA BIỂU ĐỘNG (NGUỒN DUY NHẤT: appState.tkbConfig) ====================
+const LEGACY_TKB_STORAGE_KEYS = [
+  "TKB_CONFIG_SO3",
+  "TKB_CONFIG_SO4",
+  "10A12_TKB_SO3",
+  "10A12_TKB_AFTERNOON_OLD"
+];
+
+function purgeLegacyTkbCacheKeys() {
+  try {
+    if (typeof localStorage === "undefined" || !localStorage) return;
+    LEGACY_TKB_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+}
+
+function createInitialTkbConfig() {
+  return {
+    version: "Số 4 (Từ 09/11/2026)",
+    versionLabel: "Số 4",
+    effectiveDate: "09/11/2026",
+    imageBase64: "",
+    morning: [
+      { period: 1, time: "07:00 - 07:45", t2: "TN&HN 1 (Mẫn)", t3: "QP&AN (Vân)", t4: "LÍ (Âu)", t5: "TN&HN 3 (Đài)", t6: "GDTC (Thành)", t7: "-" },
+      { period: 2, time: "07:50 - 08:35", t2: "TN&HN 2 (Mẫn)", t3: "LÍ (Âu)", t4: "CĐ Văn (Nhân)", t5: "GDTC (Thành)", t6: "CĐ Hóa (Trang)", t7: "-" },
+      { period: 3, time: "08:55 - 09:40", t2: "T.ANH (Trúc)", t3: "VĂN (Hân)", t4: "TOÁN (Mẫn)", t5: "HÓA (Trang)", t6: "T.ANH (Trúc)", t7: "-" },
+      { period: 4, time: "09:45 - 10:30", t2: "VĂN (Hân)", t3: "VĂN (Hân)", t4: "TOÁN (Mẫn)", t5: "SỬ (X.Thủy)", t6: "T.ANH (Trúc)", t7: "-" },
+      { period: 5, time: "10:35 - 11:20", t2: "-", t3: "-", t4: "ĐỊA (P.Quốc)", t5: "TOÁN (Mẫn)", t6: "-", t7: "-" }
+    ],
+    afternoon: [
+      { period: 1, time: "14:00 - 14:45", t2: "-", t3: "-", t4: "-", t5: "-", t6: "-", t7: "-" },
+      { period: 2, time: "14:50 - 15:35", t2: "-", t3: "-", t4: "-", t5: "-", t6: "-", t7: "-" },
+      { period: 3, time: "15:55 - 16:40", t2: "-", t3: "-", t4: "-", t5: "-", t6: "-", t7: "-" }
+    ]
+  };
+}
+
+function getDefaultTkbConfig() {
+  return createInitialTkbConfig();
+}
+
+function normalizeTkbConfig(raw) {
+  const fb = getDefaultTkbConfig();
+  if (!raw || typeof raw !== "object") return fb;
+
+  const normSessionRows = (srcList, metaRows, defaultTimeLabel) => {
+    const baseList = Array.isArray(srcList) && srcList.length > 0 ? srcList : metaRows;
+    return baseList.map((srcRow, idx) => {
+      const meta = metaRows[idx] || { period: idx + 1, time: `${defaultTimeLabel} ${idx + 1}` };
+      const r = (srcRow && typeof srcRow === "object") ? srcRow : {};
+      const cell = (k) => {
+        const v = String((r[k] !== undefined && r[k] !== null) ? r[k] : "-").trim();
+        return (!v || v === "—") ? "-" : v;
+      };
+      return {
+        period: Number(r.period) || meta.period || (idx + 1),
+        time: String(r.time || meta.time || `Tiết ${idx + 1}`),
+        t2: cell("t2"),
+        t3: cell("t3"),
+        t4: cell("t4"),
+        t5: cell("t5"),
+        t6: cell("t6"),
+        t7: cell("t7")
+      };
+    });
+  };
+
+  let rawVer = String(raw.versionLabel || raw.version || fb.versionLabel).trim() || fb.versionLabel;
+  if (/^\d+$/.test(rawVer)) rawVer = `Số ${rawVer}`;
+  const splitVer = rawVer.replace(/\s*\([^)]*\)\s*$/, "").split(/\s*-\s*Từ/i)[0].trim() || fb.versionLabel;
+  const hasExplicitDate = raw.effectiveDate !== undefined && raw.effectiveDate !== null;
+  const eDate = (hasExplicitDate ? String(raw.effectiveDate) : fb.effectiveDate).trim();
+  const fullVersion = eDate
+    ? `${splitVer} (Từ ${eDate})`
+    : ((raw.version && String(raw.version).includes(splitVer)) ? String(raw.version).trim() : splitVer);
+
+  return {
+    version: fullVersion,
+    versionLabel: splitVer,
+    effectiveDate: eDate,
+    imageBase64: typeof raw.imageBase64 === "string" ? raw.imageBase64 : "",
+    morning: normSessionRows(raw.morning, fb.morning, "Tiết Sáng"),
+    afternoon: normSessionRows(raw.afternoon, fb.afternoon, "Tiết Chiều")
+  };
+}
+
+function getCloudSafeTkbConfig(cfg) {
+  const src = normalizeTkbConfig(cfg || getActiveTkbConfig());
+  return {
+    version: src.version,
+    versionLabel: src.versionLabel,
+    effectiveDate: src.effectiveDate,
+    morning: src.morning,
+    afternoon: src.afternoon
+  };
+}
+
+function getActiveTkbConfig() {
+  if (!appState.tkbConfig || typeof appState.tkbConfig !== "object") {
+    appState.tkbConfig = getDefaultTkbConfig();
+  }
+  return appState.tkbConfig;
+}
+
+// ==================== 5. QUY CHẾ 01 CHUẨN ====================
+const DEFAULT_CRITERIA_LIST = [
+  { code: "C01", name: "Đạt điểm 9, 10 kiểm tra miệng / 15p", points: 10, type: "CONG" },
+  { code: "C02", name: "Phát biểu xây dựng bài sôi nổi", points: 5, type: "CONG" },
+  { code: "C03", name: "Đôi bạn cùng tiến giúp đỡ bạn học", points: 10, type: "CONG" },
+  { code: "C04", name: "Nhặt của rơi trả lại / Việc tốt", points: 15, type: "CONG" },
+  { code: "C05", name: "Tích cực hoạt động Đoàn / Văn thể mỹ", points: 10, type: "CONG" },
+  { code: "C06", name: "Hoàn thành xuất sắc ca trực nhật", points: 5, type: "CONG" },
+  
+  { code: "P01", name: "Đi học trễ (sau 06:45 sáng hoặc 13:45 chiều)", points: -10, type: "TRU" },
+  { code: "P02", name: "Nghỉ học không phép", points: -20, type: "TRU" },
+  { code: "P03", name: "Không học bài cũ / Không làm bài tập", points: -10, type: "TRU" },
+  { code: "P04", name: "Bị ghi tên vào Sổ đầu bài (tiết loại B/C/D)", points: -10, type: "TRU" },
+  { code: "P05", name: "Sai quy cách trang phục, thiếu phù hiệu", points: -10, type: "TRU" },
+  { code: "P06", name: "Sử dụng điện thoại trong giờ học", points: -20, type: "TRU" },
+  { code: "P07", name: "Mất trật tự, làm việc riêng, ngủ gật", points: -5, type: "TRU" },
+  { code: "P08", name: "Trực nhật muộn, chưa sạch, quên đổ rác", points: -20, type: "TRU" }
+];
+
+// ==================== 6. BỘ MÁY TỰ ĐỘNG HÓA TUẦN & BUỔI HỌC (ĐỘNG THEO CÀI ĐẶT) ====================
+function normalizeDateToMonday(dateInput) {
+  let d;
+  if (dateInput instanceof Date) {
+    d = new Date(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate());
+  } else if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    const parts = dateInput.trim().split("-").map(Number);
+    d = new Date(parts[0], parts[1] - 1, parts[2]);
+  } else if (typeof dateInput === "string" && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateInput.trim())) {
+    const parts = dateInput.trim().split("/").map(Number);
+    d = new Date(parts[2], parts[1] - 1, parts[0]);
+  } else {
+    d = new Date(2026, 8, 7); // Mặc định Thứ Hai 07/09/2026
+  }
+  if (isNaN(d.getTime())) d = new Date(2026, 8, 7);
+  const day = d.getDay(); // 0: CN, 1: T2...
+  const diffToMon = (day === 0) ? -6 : (1 - day);
+  d.setDate(d.getDate() + diffToMon);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function getSchoolYearStartMonday() {
+  const saved = localStorage.getItem("10A12_SCHOOL_START_DATE") || "2026-09-07";
+  return normalizeDateToMonday(saved);
+}
+
+function getSchoolYearStartDateIso() {
+  const mon = getSchoolYearStartMonday();
+  const yyyy = mon.getFullYear();
+  const mm = String(mon.getMonth() + 1).padStart(2, "0");
+  const dd = String(mon.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+let SCHOOL_YEAR_START_MONDAY = getSchoolYearStartMonday();
+
+function getAutoSchoolWeek() {
+  SCHOOL_YEAR_START_MONDAY = getSchoolYearStartMonday();
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffTime = todayMidnight.getTime() - SCHOOL_YEAR_START_MONDAY.getTime();
+  const diffWeeks = Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return Math.min(35, Math.max(1, diffWeeks));
+}
+
+function buildAutoWeekDropdown() {
+  SCHOOL_YEAR_START_MONDAY = getSchoolYearStartMonday();
+  const selectEl = document.getElementById("currentWeekSelect");
+  if (!selectEl) return;
+
+  const currentRealWeek = getAutoSchoolWeek();
+  if (!appState.selectedWeek) appState.selectedWeek = currentRealWeek;
+
+  let optionsHtml = "";
+  for (let w = 1; w <= 35; w++) {
+    const mon = new Date(SCHOOL_YEAR_START_MONDAY.getFullYear(), SCHOOL_YEAR_START_MONDAY.getMonth(), SCHOOL_YEAR_START_MONDAY.getDate() + (w - 1) * 7);
+    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+
+    const monStr = `${String(mon.getDate()).padStart(2, '0')}/${String(mon.getMonth() + 1).padStart(2, '0')}`;
+    const sunStr = `${String(sun.getDate()).padStart(2, '0')}/${String(sun.getMonth() + 1).padStart(2, '0')}/${sun.getFullYear()}`;
+
+    const isCurrent = (w === currentRealWeek);
+    const isArchived = Boolean(appState.weeklyArchives && (appState.weeklyArchives[`TUAN_${w}`] || appState.weeklyArchives[`Tuan_${w}`]));
+    const suffix = isCurrent ? " • Hiện tại" : (isArchived ? " • Đã chốt" : "");
+    const label = `Tuần ${w} (${monStr} - ${sunStr})${suffix}`;
+
+    optionsHtml += `<option value="${w}" ${w === Number(appState.selectedWeek) ? "selected" : ""}>${label}</option>`;
+  }
+
+  selectEl.innerHTML = optionsHtml;
+
+  if (typeof switchWeekScope === "function") {
+    switchWeekScope(appState.selectedWeek);
+  }
+}
+
+function getDutyDataForWeek(weekNum) {
+  const wKey = `TUAN_${Number(weekNum) || getAutoSchoolWeek()}`;
+  if (!appState.dutyByWeek || typeof appState.dutyByWeek !== "object") {
+    appState.dutyByWeek = {};
+  }
+  if (!appState.dutyByWeek[wKey]) {
+    // Khởi tạo trắng cho tuần mới (không bê phân công tuần cũ sang)
+    appState.dutyByWeek[wKey] = {};
+  }
+  return appState.dutyByWeek[wKey];
+}
+
+function setDutyDataForWeek(weekNum, dutyObj) {
+  const wKey = `TUAN_${Number(weekNum) || getAutoSchoolWeek()}`;
+  if (!appState.dutyByWeek || typeof appState.dutyByWeek !== "object") {
+    appState.dutyByWeek = {};
+  }
+  appState.dutyByWeek[wKey] = dutyObj || {};
+  appState.dutyAssignments = appState.dutyByWeek[wKey];
+}
+
+function isWeekUnlockedByGvcn(weekNum) {
+  return Boolean(appState.unlockedArchivedWeeks && appState.unlockedArchivedWeeks[Number(weekNum)]);
+}
+
+function toggleUnlockArchivedWeek(weekNum) {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ Giáo viên chủ nhiệm mới có quyền mở khóa tuần đã chốt sổ!");
+    return;
+  }
+  const w = Number(weekNum) || Number(appState.selectedWeek);
+  if (!appState.unlockedArchivedWeeks) appState.unlockedArchivedWeeks = {};
+
+  if (appState.unlockedArchivedWeeks[w]) {
+    // Khóa & cập nhật lại sổ tuần đó
+    delete appState.unlockedArchivedWeeks[w];
+    archiveSingleWeekByNumber(w, "GVCN cập nhật & chốt lại", true);
+    alert(`Đã cập nhật dữ liệu và khóa chốt sổ lại Tuần ${w}!`);
+  } else {
+    appState.unlockedArchivedWeeks[w] = true;
+    alert(`Đã MỞ KHÓA Tuần ${w}! Thầy có thể chỉnh sửa điểm nề nếp, trực nhật của tuần này, sau đó bấm "Khóa & Cập Nhật Lại" để lưu.`);
+  }
+  renderAllSections();
+}
+
+function getScopedWeekData() {
+  const selectedWeek = Number(appState.selectedWeek) || getAutoSchoolWeek();
+  const realWeek = getAutoSchoolWeek();
+  const archive = appState.weeklyArchives ? (appState.weeklyArchives[`TUAN_${selectedWeek}`] || appState.weeklyArchives[`Tuan_${selectedWeek}`]) : null;
+  const gvcnUnlocked = (appState.roleLevel === "GVCN") && isWeekUnlockedByGvcn(selectedWeek);
+
+  if (archive && Array.isArray(archive.students)) {
+    return {
+      isArchivedView: true,
+      isGvcnUnlocked: gvcnUnlocked,
+      isEditable: gvcnUnlocked,
+      selectedWeek,
+      realWeek,
+      archive,
+      students: archive.students,
+      violations: Array.isArray(archive.violations) ? archive.violations : [],
+      periodLogs: Array.isArray(archive.periodLogs) ? archive.periodLogs : []
+    };
+  }
+  const weekViolations = appState.violations.filter(v => !v.week || Number(v.week) === selectedWeek);
+  const weekPeriodLogs = appState.periodLogs.filter(p => !p.week || Number(p.week) === selectedWeek);
+  return {
+    isArchivedView: false,
+    isGvcnUnlocked: false,
+    isEditable: selectedWeek === realWeek || (appState.roleLevel === "GVCN" && selectedWeek < realWeek),
+    selectedWeek,
+    realWeek,
+    archive: null,
+    students: appState.students,
+    violations: weekViolations,
+    periodLogs: weekPeriodLogs
+  };
+}
+
+function buildRetroactiveArchiveForWeek(weekNum, lockedByLabel = "Rà soát & Chốt sổ") {
+  const w = Number(weekNum);
+  const weekViolations = (appState.violations || []).filter(v => Number(v.week) === w);
+  const weekPeriodLogs = (appState.periodLogs || []).filter(p => Number(p.week) === w);
+  const weekDuty = getDutyDataForWeek(w);
+
+  // Tính lại điểm thực tế của từng học sinh trong đúng tuần w: 100 + tổng cộng/trừ của tuần w
+  const existingArchive = appState.weeklyArchives ? appState.weeklyArchives[`TUAN_${w}`] : null;
+  const baseRoster = (existingArchive && Array.isArray(existingArchive.students) && existingArchive.students.length > 0)
+    ? existingArchive.students
+    : appState.students;
+
+  const computedStudents = baseRoster.map(st => {
+    const delta = weekViolations
+      .filter(v => v.studentId === st.id)
+      .reduce((sum, v) => sum + parseScore(v.points, 0), 0);
+    return {
+      ...JSON.parse(JSON.stringify(st)),
+      diemThiDua: Math.max(0, 100 + delta)
+    };
+  });
+
+  const sum = computedStudents.reduce((acc, s) => acc + parseScore(s.diemThiDua, 100), 0);
+  const avgStr = (computedStudents.length ? (sum / computedStudents.length).toFixed(1) : "100.0") + "đ";
+
+  return {
+    week: w,
+    lockedAt: new Date().toLocaleString("vi-VN"),
+    lockedBy: lockedByLabel,
+    avgScore: avgStr,
+    students: computedStudents,
+    violations: JSON.parse(JSON.stringify(weekViolations)),
+    periodLogs: JSON.parse(JSON.stringify(weekPeriodLogs)),
+    dutyAssignments: JSON.parse(JSON.stringify(weekDuty))
+  };
+}
+
+function archiveSingleWeekByNumber(weekNum, lockedByLabel = "GVCN chốt sổ", forceOverwrite = false) {
+  const w = Number(weekNum);
+  if (w < 1 || w > 35) return null;
+  if (!appState.weeklyArchives) appState.weeklyArchives = {};
+  const archiveKey = `TUAN_${w}`;
+  if (appState.weeklyArchives[archiveKey] && !forceOverwrite) {
+    return appState.weeklyArchives[archiveKey];
+  }
+
+  const curRealWeek = getAutoSchoolWeek();
+  let archiveObj;
+  if (w === curRealWeek && !forceOverwrite) {
+    const sum = appState.students.reduce((acc, s) => acc + parseScore(s.diemThiDua, 100), 0);
+    const avgStr = (appState.students.length ? (sum / appState.students.length).toFixed(1) : "100.0") + "đ";
+    const weekViolations = (appState.violations || []).filter(v => !v.week || Number(v.week) === w);
+    const weekPeriodLogs = (appState.periodLogs || []).filter(p => !p.week || Number(p.week) === w);
+    archiveObj = {
+      week: w,
+      lockedAt: new Date().toLocaleString("vi-VN"),
+      lockedBy: lockedByLabel,
+      avgScore: avgStr,
+      students: JSON.parse(JSON.stringify(appState.students)),
+      violations: JSON.parse(JSON.stringify(weekViolations)),
+      periodLogs: JSON.parse(JSON.stringify(weekPeriodLogs)),
+      dutyAssignments: JSON.parse(JSON.stringify(getDutyDataForWeek(w)))
+    };
+  } else {
+    archiveObj = buildRetroactiveArchiveForWeek(w, lockedByLabel);
+  }
+
+  appState.weeklyArchives[archiveKey] = archiveObj;
+  saveStateToLocal();
+  if (appState.authToken && appState.roleLevel === "GVCN") {
+    callApi("saveWeeklyArchive", { archiveKey, archive: archiveObj }, "POST");
+  }
+  return archiveObj;
+}
+
+async function auditAndLockAllPreviousWeeks() {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ GVCN mới có quyền rà soát & chốt sổ các tuần trước!");
+    return;
+  }
+  const curWeek = getAutoSchoolWeek();
+  if (curWeek <= 1) {
+    alert("Hiện đang là Tuần 1, chưa có tuần trước đó để chốt!");
+    return;
+  }
+  let newlyLockedCount = 0;
+  for (let w = 1; w < curWeek; w++) {
+    const key = `TUAN_${w}`;
+    if (!appState.weeklyArchives || !appState.weeklyArchives[key]) {
+      archiveSingleWeekByNumber(w, "GVCN rà soát & chốt bù", false);
+      newlyLockedCount++;
+    }
+  }
+  buildAutoWeekDropdown();
+  renderAllSections();
+  if (newlyLockedCount > 0) {
+    alert(`✅ Đã rà soát và chốt sổ bổ sung thành công ${newlyLockedCount} tuần trước (từ Tuần 1 đến Tuần ${curWeek - 1})!`);
+  } else {
+    alert(`Tất cả các tuần trước (Tuần 1 → Tuần ${curWeek - 1}) đều đã được chốt sổ đầy đủ!`);
+  }
+}
+
+function getNextMondayRolloverInfo(nowDate = new Date()) {
+  const now = nowDate instanceof Date ? nowDate : new Date(nowDate);
+  const currentWeek = getAutoSchoolWeek();
+  SCHOOL_YEAR_START_MONDAY = getSchoolYearStartMonday();
+  const curWeekMondayMs = SCHOOL_YEAR_START_MONDAY.getTime() + (currentWeek - 1) * 7 * 86400000;
+  let nextMondayMs = curWeekMondayMs + 7 * 86400000;
+  while (nextMondayMs <= now.getTime()) {
+    nextMondayMs += 7 * 86400000;
+  }
+  const diffMs = Math.max(0, nextMondayMs - now.getTime());
+  const totalMins = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMins / (24 * 60));
+  const hours = Math.floor((totalMins % (24 * 60)) / 60);
+  const mins = totalMins % 60;
+  const nextMondayDate = new Date(nextMondayMs);
+  const dateLabel = `${String(nextMondayDate.getDate()).padStart(2, '0')}/${String(nextMondayDate.getMonth() + 1).padStart(2, '0')}/${nextMondayDate.getFullYear()} 00:00`;
+  return {
+    currentWeek,
+    nextWeek: Math.min(35, currentWeek + 1),
+    nextMondayDate,
+    dateLabel,
+    days,
+    hours,
+    minutes: mins,
+    formatted: `${days} ngày ${hours}g ${mins}p`
+  };
+}
+
+function checkAndPerformClientMondayRollover(options = {}) {
+  const curWeek = getAutoSchoolWeek();
+  const lastStored = parseInt(localStorage.getItem("10A12_LAST_ACTIVE_WEEK") || "0", 10) || 0;
+
+  if (!lastStored) {
+    localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(curWeek));
+    appState.lastAutoRolloverWeek = curWeek;
+    return { rolledOver: false, initialized: true, currentWeek: curWeek };
+  }
+
+  if (lastStored >= curWeek) {
+    return { rolledOver: false, currentWeek: curWeek };
+  }
+
+  // Tự động rà soát & chốt bù toàn bộ các tuần bị hổng từ tuần cũ đến (curWeek - 1)
+  if (!appState.weeklyArchives) appState.weeklyArchives = {};
+  for (let w = Math.max(1, lastStored); w < curWeek; w++) {
+    const archiveKey = `TUAN_${w}`;
+    if (!appState.weeklyArchives[archiveKey]) {
+      const archiveObj = (w === lastStored)
+        ? (() => {
+            const sum = appState.students.reduce((acc, s) => acc + parseScore(s.diemThiDua, 100), 0);
+            const avgStr = (appState.students.length ? (sum / appState.students.length).toFixed(1) : "100.0") + "đ";
+            const weekViolations = (appState.violations || []).filter(v => !v.week || Number(v.week) === w);
+            const weekPeriodLogs = (appState.periodLogs || []).filter(p => !p.week || Number(p.week) === w);
+            return {
+              week: w,
+              lockedAt: new Date().toLocaleString("vi-VN"),
+              lockedBy: "Tự động 00:00 Thứ 2",
+              avgScore: avgStr,
+              students: JSON.parse(JSON.stringify(appState.students)),
+              violations: JSON.parse(JSON.stringify(weekViolations)),
+              periodLogs: JSON.parse(JSON.stringify(weekPeriodLogs)),
+              dutyAssignments: JSON.parse(JSON.stringify(getDutyDataForWeek(w)))
+            };
+          })()
+        : buildRetroactiveArchiveForWeek(w, "Tự động chốt bù khi chuyển tuần");
+
+      appState.weeklyArchives[archiveKey] = archiveObj;
+      if (!options.skipCloudSync && appState.authToken && appState.roleLevel === "GVCN") {
+        callApi("saveWeeklyArchive", { archiveKey, archive: archiveObj }, "POST");
+      }
+    }
+  }
+
+  // Reset toàn bộ điểm thi đua về 100đ cho tuần mới
+  appState.students.forEach(s => {
+    s.diemThiDua = 100;
+  });
+
+  // Reset TRẮNG toàn bộ phân công lao động / trực nhật để bắt đầu tuần mới sạch sẽ
+  setDutyDataForWeek(curWeek, {});
+  localStorage.removeItem("10A12_DUTY_7SESSIONS");
+
+  appState.selectedWeek = curWeek;
+  appState.lastAutoRolloverWeek = curWeek;
+  appState.lastAutoRolloverAt = new Date().toLocaleString("vi-VN");
+  localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(curWeek));
+  localStorage.setItem("10A12_LAST_ROLLOVER_AT", appState.lastAutoRolloverAt);
+  saveStateToLocal();
+
+  if (!options.skipCloudSync && appState.authToken && appState.roleLevel === "GVCN") {
+    callApi("resetWeeklyScores", {}, "POST");
+    callApi("saveDutyState", {
+      dutyByWeek: appState.dutyByWeek,
+      dutyAssignments: {},
+      volunteerLaborList: appState.volunteerLaborList
+    }, "POST");
+    callApi("saveConfig", {
+      lastAutoRolloverWeek: String(curWeek),
+      lastAutoRolloverAt: appState.lastAutoRolloverAt
+    }, "POST");
+  }
+
+  if (typeof buildAutoWeekDropdown === "function" && typeof document !== "undefined" && document.getElementById("currentWeekSelect")) {
+    buildAutoWeekDropdown();
+    if (typeof renderAllSections === "function") renderAllSections();
+  }
+
+  return {
+    rolledOver: true,
+    archivedWeek: curWeek - 1,
+    currentWeek: curWeek,
+    rolledOverAt: appState.lastAutoRolloverAt
+  };
+}
+
+function updateWeeklyRolloverUI() {
+  const info = getNextMondayRolloverInfo();
+  const countdownEl = document.getElementById("weeklyRolloverCountdownText");
+  if (countdownEl) {
+    countdownEl.innerText = `Sau ${info.formatted} (00:00 Thứ 2 • ${info.dateLabel.split(" ")[0]})`;
+  }
+  const lastAtEl = document.getElementById("autoRolloverLastTime");
+  if (lastAtEl) {
+    lastAtEl.innerText = appState.lastAutoRolloverAt || "Sẵn sàng chốt sổ vào 00:00 Thứ 2 tới";
+  }
+  const triggerBadgeEl = document.getElementById("autoRolloverTriggerBadge");
+  if (triggerBadgeEl) {
+    triggerBadgeEl.innerHTML = appState.mondayRolloverTriggerActive
+      ? `<i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i> Trigger Apps Script 00:00 T2: Đã bật`
+      : `<i class="fa-solid fa-clock text-amber-600 mr-1"></i> Tự động khi mở sổ T2 (hoặc bật Trigger GS)`;
+  }
+  renderGvcnWeekLockControlsBar();
+}
+
+function renderGvcnWeekLockControlsBar() {
+  const weekSel = document.getElementById("currentWeekSelect");
+  if (!weekSel || !weekSel.parentElement) return;
+
+  let bar = document.getElementById("gvcnWeekAuditUnlockControls");
+  if (appState.roleLevel !== "GVCN") {
+    if (bar) bar.remove();
+    return;
+  }
+
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "gvcnWeekAuditUnlockControls";
+    bar.className = "hidden lg:inline-flex items-center gap-1.5 flex-wrap";
+    weekSel.parentElement.appendChild(bar);
+  }
+
+  const selWeek = Number(appState.selectedWeek) || getAutoSchoolWeek();
+  const curWeek = getAutoSchoolWeek();
+  const isArchived = Boolean(appState.weeklyArchives && appState.weeklyArchives[`TUAN_${selWeek}`]);
+  const isUnlocked = isWeekUnlockedByGvcn(selWeek);
+
+  let unclosedPrevCount = 0;
+  for (let w = 1; w < curWeek; w++) {
+    if (!appState.weeklyArchives || !appState.weeklyArchives[`TUAN_${w}`]) unclosedPrevCount++;
+  }
+
+  bar.innerHTML = `
+    ${isArchived ? `
+      <button type="button" onclick="toggleUnlockArchivedWeek(${selWeek})"
+        class="px-2.5 py-1.5 rounded-xl text-[11px] font-black transition flex items-center gap-1 ${isUnlocked ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs' : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'}">
+        <i class="fa-solid ${isUnlocked ? 'fa-lock' : 'fa-lock-open'}"></i>
+        <span>${isUnlocked ? `Khóa & Lưu Lại Tuần ${selWeek}` : `Mở Khóa Tuần ${selWeek} Để Sửa`}</span>
+      </button>
+    ` : (selWeek < curWeek ? `
+      <button type="button" onclick="archiveSingleWeekByNumber(${selWeek}, 'GVCN chốt sổ tuần cũ', true); buildAutoWeekDropdown(); renderAllSections();"
+        class="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black transition flex items-center gap-1">
+        <i class="fa-solid fa-thumbtack"></i>
+        <span>Chốt Sổ Tuần ${selWeek}</span>
+      </button>
+    ` : '')}
+
+    ${unclosedPrevCount > 0 ? `
+      <button type="button" onclick="auditAndLockAllPreviousWeeks()"
+        class="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black transition flex items-center gap-1"
+        title="Rà soát và chốt sổ toàn bộ các tuần trước chưa chốt">
+        <i class="fa-solid fa-list-check"></i>
+        <span>Chốt bù ${unclosedPrevCount} tuần trước</span>
+      </button>
+    ` : ''}
+  `;
+}
+
+function getAutoSessionKey() {
+  const now = new Date();
+  const day = now.getDay(); // 0: CN, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7
+  const hour = now.getHours();
+
+  if (day === 0 || day === 6 || (day === 5 && hour >= 12)) return "T2_SANG_NEXT";
+  if (day === 1) return hour < 12 ? "T2_SANG_NEXT" : "T2_CHIEU";
+  if (day === 2) return hour < 12 ? "T3_SANG" : "T3_CHIEU";
+  if (day === 3) return hour < 12 ? "T4_SANG" : "T5_SANG";
+  if (day === 4) return hour < 12 ? "T5_SANG" : "T6_SANG";
+  if (day === 5) return "T6_SANG";
+
+  return "T2_CHIEU";
+}
+
+function getSessionLabel(key) {
+  const map = {
+    "T2_CHIEU": "Chiều Thứ 2",
+    "T3_SANG": "Sáng Thứ 3",
+    "T3_CHIEU": "Chiều Thứ 3",
+    "T4_SANG": "Sáng Thứ 4",
+    "T5_SANG": "Sáng Thứ 5",
+    "T6_SANG": "Sáng Thứ 6",
+    "T2_SANG_NEXT": "Sáng Thứ 2 (Tuần sau)",
+    "T2_SANG": "Sáng Thứ 2"
+  };
+  return map[key] || "Chiều Thứ 2";
+}
+
+function getSessionKeyByName(name) {
+  const map = {
+    "Chiều Thứ 2": "T2_CHIEU",
+    "Sáng Thứ 3": "T3_SANG",
+    "Chiều Thứ 3": "T3_CHIEU",
+    "Sáng Thứ 4": "T4_SANG",
+    "Sáng Thứ 5": "T5_SANG",
+    "Sáng Thứ 6": "T6_SANG",
+    "Sáng Thứ 2 (Tuần sau)": "T2_SANG_NEXT",
+    "Sáng Thứ 2": "T2_SANG"
+  };
+  return map[name] || "T2_CHIEU";
+}
+
+function syncAttendanceSessionOnLoad() {
+  const autoKey = getAutoSessionKey();
+  appState.currentSessionKey = autoKey;
+  appState.currentSessionLabel = getSessionLabel(autoKey);
+
+  const sessionSelect = document.getElementById("attendanceSessionSelect");
+  if (sessionSelect) {
+    sessionSelect.value = autoKey;
+  }
+}
+
+let appState = {
+  currentUser: safeJsonParse(localStorage.getItem("10A12_SESSION_USER"), null),
+  authToken: localStorage.getItem("10A12_AUTH_TOKEN") || "",
+  roleLevel: "GUEST",
+  allowStudentLeaderEdit: localStorage.getItem("10A12_ALLOW_EDIT") !== "false",
+
+  selectedWeek: getAutoSchoolWeek(),
+  currentSessionKey: getAutoSessionKey(),
+  currentSessionLabel: getSessionLabel(getAutoSessionKey()),
+  currentCampaignId: "KY1_100K",
+  currentStudentTeamFilter: "ALL",
+
+  students: normalizeStudentRosterAccounts(safeJsonParse(localStorage.getItem("10A12_STUDENTS_V9"), null) || DEFAULT_STUDENTS_10A12),
+  violations: safeJsonParse(localStorage.getItem("10A12_VIOLATIONS_V9"), []),
+  campaigns: safeJsonParse(localStorage.getItem("10A12_CAMPAIGNS_V9"), null) || [
+    { id: "KY1_100K", title: "Quỹ Lớp Học Kỳ 1", target: 100000, status: "Đang thu" },
+    { id: "KY2_STEM", title: "Quỹ Hoạt Động Trải Nghiệm & STEM", target: 50000, status: "Đang thu" }
+  ],
+  fundPayments: safeJsonParse(localStorage.getItem("10A12_PAYMENTS_V9"), []),
+  cashbook: safeJsonParse(localStorage.getItem("10A12_CASHBOOK_V9"), null) || [
+    { code: "CHI_01", time: "15/10/2026", type: "CHI", category: "Vệ sinh & Cơ sở vật chất", amount: 150000, author: "Thủ quỹ lớp", note: "Mua chổi quét lớp và nước lau sàn", status: "DA_DUYET" }
+  ],
+  auditLogs: safeJsonParse(localStorage.getItem("10A12_AUDIT_LOGS"), []),
+  deletedStudents: safeJsonParse(localStorage.getItem("10A12_DELETED_STUDENTS"), []),
+  leaveRequests: safeJsonParse(localStorage.getItem("10A12_LEAVE_REQUESTS"), []),
+  specialViolationReports: safeJsonParse(localStorage.getItem("10A12_SPECIAL_VIOLATION_REPORTS"), []),
+  profileCorrections: safeJsonParse(localStorage.getItem("10A12_PROFILE_CORRECTIONS"), []),
+  periodLogs: safeJsonParse(localStorage.getItem("10A12_PERIODS_V9"), []),
+  letters: safeJsonParse(localStorage.getItem("10A12_LETTERS_V9"), []),
+  criteriaList: safeJsonParse(localStorage.getItem("10A12_CRITERIA_V9"), null) || DEFAULT_CRITERIA_LIST,
+  attendanceRecords: safeJsonParse(localStorage.getItem("10A12_ATT_RECORDS"), {}),
+  dutyByWeek: safeJsonParse(localStorage.getItem("10A12_DUTY_BY_WEEK"), {}),
+  dutyAssignments: safeJsonParse(localStorage.getItem("10A12_DUTY_7SESSIONS"), {}),
+  unlockedArchivedWeeks: {},
+  isSeatingDirty: false,
+  isAppointmentsDirty: false,
+  volunteerLaborList: safeJsonParse(localStorage.getItem("10A12_VOLUNTEER_LABOR"), []),
+  vtmEvents: safeJsonParse(localStorage.getItem("10A12_VTM_EVENTS"), []),
+  classMedia: safeJsonParse(localStorage.getItem("10A12_CLASS_MEDIA"), []),
+  customTicker: localStorage.getItem("10A12_CUSTOM_TICKER") || "",
+  tkbCustomImage: localStorage.getItem("10A12_TKB_IMAGE") || "tkb_10a12.png",
+  tkbUpdatedAt: localStorage.getItem("10A12_TKB_UPDATED_AT") || "",
+  tkbConfig: (() => {
+    purgeLegacyTkbCacheKeys();
+    const cfg = normalizeTkbConfig(safeJsonParse(localStorage.getItem("10A12_TKB_CONFIG"), null));
+    const storedImg = localStorage.getItem("10A12_TKB_IMAGE") || "";
+    if (!cfg.imageBase64 && storedImg && storedImg.startsWith("data:image")) {
+      cfg.imageBase64 = storedImg;
+    }
+    return cfg;
+  })(),
+  lastAutoRolloverWeek: parseInt(localStorage.getItem("10A12_LAST_ACTIVE_WEEK") || "0", 10) || getAutoSchoolWeek(),
+  lastAutoRolloverAt: localStorage.getItem("10A12_LAST_ROLLOVER_AT") || "",
+  mondayRolloverTriggerActive: localStorage.getItem("10A12_TRIGGER_ACTIVE") === "true",
+  weeklyArchives: safeJsonParse(localStorage.getItem("10A12_WEEKLY_ARCHIVES"), {}),
+  seatingHistory: safeJsonParse(localStorage.getItem("10A12_SEATING_HISTORY"), []),
+
+  fundSummary: { totalIncome: 0, totalExpense: 150000, balance: -150000 },
+  selectedStudentForDetail: null
+};
+
+let currentSeatingLayout = safeJsonParse(localStorage.getItem("classroom_10A12_glass_v9"), null) || DEFAULT_SEATING_LAYOUT;
+let selectedSeatFirst = null;
+
+function saveStateToLocal() {
+  try {
+    localStorage.setItem("10A12_STUDENTS_V9", JSON.stringify(appState.students));
+    localStorage.setItem("10A12_VIOLATIONS_V9", JSON.stringify(appState.violations));
+    localStorage.setItem("10A12_CAMPAIGNS_V9", JSON.stringify(appState.campaigns));
+    localStorage.setItem("10A12_PAYMENTS_V9", JSON.stringify(appState.fundPayments));
+    localStorage.setItem("10A12_CASHBOOK_V9", JSON.stringify(appState.cashbook));
+    localStorage.setItem("10A12_AUDIT_LOGS", JSON.stringify(appState.auditLogs));
+    localStorage.setItem("10A12_DELETED_STUDENTS", JSON.stringify(appState.deletedStudents || []));
+    localStorage.setItem("10A12_LEAVE_REQUESTS", JSON.stringify(appState.leaveRequests || []));
+    localStorage.setItem("10A12_SPECIAL_VIOLATION_REPORTS", JSON.stringify(appState.specialViolationReports || []));
+    localStorage.setItem("10A12_PROFILE_CORRECTIONS", JSON.stringify(appState.profileCorrections || []));
+    localStorage.setItem("10A12_PERIODS_V9", JSON.stringify(appState.periodLogs));
+    localStorage.setItem("10A12_LETTERS_V9", JSON.stringify(appState.letters));
+    localStorage.setItem("10A12_ATT_RECORDS", JSON.stringify(appState.attendanceRecords));
+    localStorage.setItem("10A12_DUTY_BY_WEEK", JSON.stringify(appState.dutyByWeek || {}));
+    localStorage.setItem("10A12_DUTY_7SESSIONS", JSON.stringify(appState.dutyAssignments));
+    localStorage.setItem("10A12_VOLUNTEER_LABOR", JSON.stringify(appState.volunteerLaborList));
+    localStorage.setItem("10A12_VTM_EVENTS", JSON.stringify(appState.vtmEvents));
+    localStorage.setItem("10A12_CLASS_MEDIA", JSON.stringify(appState.classMedia));
+    localStorage.setItem("classroom_10A12_glass_v9", JSON.stringify(currentSeatingLayout));
+    localStorage.setItem("10A12_ALLOW_EDIT", String(appState.allowStudentLeaderEdit));
+    localStorage.setItem("10A12_CRITERIA_V9", JSON.stringify(appState.criteriaList));
+    purgeLegacyTkbCacheKeys();
+    localStorage.setItem("10A12_CUSTOM_TICKER", appState.customTicker || "");
+    localStorage.setItem("10A12_TKB_IMAGE", appState.tkbCustomImage || "tkb_10a12.png");
+    localStorage.setItem("10A12_TKB_UPDATED_AT", appState.tkbUpdatedAt || "");
+    try {
+      localStorage.setItem("10A12_TKB_CONFIG", JSON.stringify(getActiveTkbConfig()));
+    } catch (tkbQuotaErr) {
+      localStorage.setItem("10A12_TKB_CONFIG", JSON.stringify(getCloudSafeTkbConfig(getActiveTkbConfig())));
+    }
+    localStorage.setItem("10A12_LAST_ROLLOVER_AT", appState.lastAutoRolloverAt || "");
+    localStorage.setItem("10A12_TRIGGER_ACTIVE", String(Boolean(appState.mondayRolloverTriggerActive)));
+    localStorage.setItem("10A12_WEEKLY_ARCHIVES", JSON.stringify(appState.weeklyArchives));
+    localStorage.setItem("10A12_SEATING_HISTORY", JSON.stringify(appState.seatingHistory));
+    return true;
+  } catch (err) {
+    console.warn("[Storage Quota Warning]", err);
+    return false;
+  }
+}
+
+// ==================== 7. XÁC THỰC PHÂN QUYỀN RBAC ====================
+function initAuthSession() {
+  const authScreen = document.getElementById("authScreen");
+  if (!appState.currentUser) {
+    if (authScreen) authScreen.classList.remove("hidden");
+  } else {
+    if (authScreen) authScreen.classList.add("hidden");
+    applyRolePermissions();
+  }
+}
+
+function deriveRoleLevelsFromChucVu(chucVuRaw) {
+  const chucVu = String(chucVuRaw || "").toLowerCase().trim();
+  if (!chucVu || chucVu === "tổ viên" || chucVu === "thành viên" || chucVu === "học sinh") {
+    return ["STUDENT"];
+  }
+  const levels = [];
+  if (
+    chucVu.includes("lớp trưởng") ||
+    chucVu.includes("lớp phó học tập") ||
+    chucVu.includes("bí thư") ||
+    chucVu.includes("tổ trưởng") ||
+    chucVu.includes("cờ đỏ") ||
+    chucVu.includes("thi đua") ||
+    chucVu.includes("cán sự")
+  ) {
+    levels.push("LEADER");
+  }
+  if (chucVu.includes("thủ quỹ")) levels.push("TREASURER");
+  if (chucVu.includes("lao động")) levels.push("LABOR");
+  if (chucVu.includes("văn thể mỹ") || chucVu.includes("vtm")) levels.push("VTM");
+  return levels.length > 0 ? levels : ["STUDENT"];
+}
+
+function deriveRoleLevelFromChucVu(chucVuRaw) {
+  return deriveRoleLevelsFromChucVu(chucVuRaw)[0] || "STUDENT";
+}
+
+function getCurrentUserRoleLevels() {
+  if (!appState.currentUser) return ["GUEST"];
+  if (appState.currentUser.roleLevel === "GVCN") return ["GVCN"];
+  const levels = deriveRoleLevelsFromChucVu(appState.currentUser.role || "");
+  if (appState.currentUser.roleLevel && !levels.includes(appState.currentUser.roleLevel)) {
+    levels.push(appState.currentUser.roleLevel);
+  }
+  return levels;
+}
+
+function normalizeStudentRosterAccounts(list, deletedArchiveList) {
+  const filtered = filterOutDeletedStudentsFromList(list, deletedArchiveList);
+  const passOverrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+  return filtered.map(s => {
+    const cleanName = removeVietnameseTones(s.hoTen || s.id || "");
+    const defaultAcc = cleanName ? `${cleanName}.k58qt` : String(s.id || "").toLowerCase();
+    const overridePass = s.id && passOverrides[s.id] ? String(passOverrides[s.id]) : "";
+    return {
+      ...s,
+      taiKhoan: String(s.taiKhoan || s.tenDangNhap || defaultAcc).trim(),
+      matKhau: overridePass || String(s.matKhau || "123456").trim()
+    };
+  });
+}
+
+function matchStudentAccount(list, rawLower, cleanRawInput, baseInput, baseRaw) {
+  if (!Array.isArray(list)) return null;
+  return list.find(s => {
+    const rawAccount = String(s.taiKhoan || s.tenDangNhap || "").toLowerCase().trim();
+    const normAccount = removeVietnameseTones(rawAccount.replace(/\.k58qt$/i, ""));
+    const normFullAccount = removeVietnameseTones(rawAccount);
+    const sCleanName = removeVietnameseTones(s.hoTen);
+    const sCode = removeVietnameseTones(s.id);
+    return (rawAccount && rawAccount === rawLower) ||
+           (rawAccount && rawAccount === `${baseRaw}.k58qt`) ||
+           (normFullAccount && normFullAccount === cleanRawInput) ||
+           (normAccount && normAccount === baseInput) ||
+           (sCleanName && sCleanName === baseInput) ||
+           (sCode && sCode === baseInput);
+  }) || null;
+}
+
+async function handleUserLogin(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const rawInput = document.getElementById("authUsernameInput").value.trim();
+  const cleanInput = removeVietnameseTones(rawInput);
+  const rawLower = rawInput.toLowerCase().replace(/\s+/g, "");
+  const password = document.getElementById("authPasswordInput").value.trim();
+  const errorBox = document.getElementById("loginErrorMsg");
+  const submitBtn = document.getElementById("btnSubmitLogin");
+  const prevBtnHtml = submitBtn ? submitBtn.innerHTML : "";
+
+  if (errorBox) errorBox.classList.add("hidden");
+  if (!rawInput || !password) {
+    if (errorBox) {
+      errorBox.innerText = "Vui lòng nhập đầy đủ Tên đăng nhập và Mật khẩu!";
+      errorBox.classList.remove("hidden");
+    }
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Đang xác thực...`;
+  }
+
+  try {
+    appState.students = normalizeStudentRosterAccounts(appState.students);
+
+    // 1. Thử xác thực trực tiếp qua máy chủ Apps Script để nhận Auth Token chính thức
+    const cloudRes = await callApi("loginUser", { username: rawInput, password }, "POST");
+    if (cloudRes && cloudRes.status === "success" && cloudRes.user) {
+      appState.authToken = cloudRes.token || "";
+      localStorage.setItem("10A12_AUTH_TOKEN", appState.authToken);
+      appState.currentUser = cloudRes.user;
+      if (cloudRes.user.roleLevel === "GVCN") {
+        localStorage.setItem("10A12_GVCN_PASSWORD", password);
+      } else if (cloudRes.user.studentId) {
+        const overrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+        overrides[cloudRes.user.studentId] = password;
+        localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(overrides));
+      }
+      await finishLogin(true, true);
+      return;
+    }
+
+    // Chỉ chặn ngay nếu máy chủ xác nhận rõ là SAI MẬT KHẨU
+    const isGvcnInput = (cleanInput === "gvcn" || cleanInput === "gvcnk58qt" || rawLower === "gvcn" || rawLower === "gvcn.k58qt");
+    if (cloudRes && cloudRes.status === "error" && cloudRes.errorCode === "WRONG_PASSWORD") {
+      if (errorBox) {
+        errorBox.innerText = cloudRes.message || "Mật khẩu không chính xác!";
+        errorBox.classList.remove("hidden");
+      }
+      return;
+    }
+
+    // 2. Xác thực thông minh qua danh sách cục bộ & tự động cấp token ngầm từ máy chủ
+    const savedGvcnPass = localStorage.getItem("10A12_GVCN_PASSWORD") || "123456";
+    if (isGvcnInput) {
+      if (password === savedGvcnPass) {
+        appState.currentUser = {
+          username: "gvcn",
+          fullName: "ThS. Trần Dương Quốc Mẫn",
+          role: "GVCN Lớp 10A12",
+          roleLevel: "GVCN"
+        };
+        await trySilentTokenExchange();
+        await finishLogin(true, true);
+        return;
+      } else {
+        if (errorBox) {
+          errorBox.innerText = "Mật khẩu GVCN không chính xác!";
+          errorBox.classList.remove("hidden");
+        }
+        return;
+      }
+    }
+
+    const baseInput = cleanInput.replace(/k58qt$/, "");
+    const baseRaw = rawLower.replace(/\.k58qt$/i, "");
+
+    let matched = matchStudentAccount(appState.students, rawLower, cleanInput, baseInput, baseRaw);
+    if (!matched && typeof DEFAULT_STUDENTS_10A12 !== "undefined") {
+      matched = matchStudentAccount(normalizeStudentRosterAccounts(DEFAULT_STUDENTS_10A12), rawLower, cleanInput, baseInput, baseRaw);
+    }
+
+    if (matched) {
+      const passOverrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+      const passExpected = String(passOverrides[matched.id] || matched.matKhau || "123456").trim();
+      if (password === passExpected) {
+        const roleLevel = deriveRoleLevelFromChucVu(matched.chucVu);
+        appState.currentUser = {
+          username: matched.taiKhoan || `${removeVietnameseTones(matched.hoTen)}.k58qt`,
+          studentId: matched.id,
+          fullName: matched.hoTen,
+          role: matched.chucVu || "Học sinh",
+          roleLevel: roleLevel,
+          team: matched.to
+        };
+        await trySilentTokenExchange();
+        await finishLogin(true, true);
+        return;
+      } else {
+        if (errorBox) {
+          errorBox.innerText = "Mật khẩu không chính xác! (Mật khẩu mặc định: 123456)";
+          errorBox.classList.remove("hidden");
+        }
+        return;
+      }
+    }
+
+    if (errorBox) {
+      errorBox.innerText = `Không tìm thấy tài khoản "${rawInput}". Gợi ý học sinh: nguyentanan hoặc HS01 (MK: 123456).`;
+      errorBox.classList.remove("hidden");
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = prevBtnHtml || `<span>Đăng nhập Hệ thống</span><i class="fa-solid fa-arrow-right"></i>`;
+    }
+  }
+}
+
+async function trySilentTokenExchange() {
+  if (!appState.currentUser) return false;
+  try {
+    const res = await callApi("reissueSessionToken", {
+      username: appState.currentUser.username || "",
+      studentId: appState.currentUser.studentId || "",
+      roleLevel: appState.currentUser.roleLevel || "STUDENT",
+      fullName: appState.currentUser.fullName || ""
+    }, "POST");
+    if (res && res.status === "success" && res.token) {
+      appState.authToken = res.token;
+      localStorage.setItem("10A12_AUTH_TOKEN", appState.authToken);
+      if (res.user) {
+        appState.currentUser = { ...appState.currentUser, ...res.user };
+        localStorage.setItem("10A12_SESSION_USER", JSON.stringify(appState.currentUser));
+      }
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function getDefaultLandingTabForRole(roleLevel) {
+  const isMobile = window.innerWidth < 768;
+  if (roleLevel === "STUDENT") return "tab-ca-nhan";
+  if (!isMobile) return "tab-tong-quan";
+  if (roleLevel === "LABOR") return "tab-lao-dong";
+  if (roleLevel === "TREASURER") return "tab-quy-lop";
+  if (roleLevel === "VTM") return "tab-van-the-my";
+  if (roleLevel === "LEADER") return "tab-thi-dua";
+  return "tab-tong-quan";
+}
+
+async function finishLogin(shouldSyncCloud = false, isFreshLogin = false) {
+  localStorage.setItem("10A12_SESSION_USER", JSON.stringify(appState.currentUser));
+  const authScreen = document.getElementById("authScreen");
+  if (authScreen) authScreen.classList.add("hidden");
+  applyRolePermissions(isFreshLogin);
+  renderAllSections();
+  if (shouldSyncCloud) {
+    await syncWithCloud();
+  }
+}
+
+function handleUserLogout() {
+  if (confirm("Thầy/bạn có chắc chắn muốn đăng xuất?")) {
+    appState.currentUser = null;
+    appState.authToken = "";
+    localStorage.removeItem("10A12_SESSION_USER");
+    localStorage.removeItem("10A12_AUTH_TOKEN");
+    location.reload();
+  }
+}
+
+// ==================== MA TRẬN PHÂN QUYỀN THỐNG NHẤT (GVCN & BAN CÁN SỰ) ====================
+function isLeaderEditUnlocked() {
+  return appState.roleLevel === "GVCN" || Boolean(appState.allowStudentLeaderEdit);
+}
+
+function isTopClassLeader() {
+  if (!appState.currentUser) return false;
+  if (appState.roleLevel === "GVCN") return true;
+  const r = String(appState.currentUser.role || "").toLowerCase();
+  return r.includes("lớp trưởng") || r.includes("bí thư");
+}
+
+function canManageDiscipline() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  const levels = getCurrentUserRoleLevels();
+  return levels.includes("LEADER") || isTopClassLeader();
+}
+
+function canManageDuty() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  const levels = getCurrentUserRoleLevels();
+  return levels.includes("LABOR") || isTopClassLeader();
+}
+
+function canManageVtm() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  const levels = getCurrentUserRoleLevels();
+  return levels.includes("VTM") || isTopClassLeader();
+}
+
+function canManageFund() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  const levels = getCurrentUserRoleLevels();
+  return levels.includes("TREASURER");
+}
+
+function canCurrentUserEditSeating() {
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  return isTopClassLeader();
+}
+
+function updateMasterSwitchButtonUI() {
+  const btn = document.getElementById("btnMasterSwitch");
+  if (btn) {
+    btn.innerHTML = appState.allowStudentLeaderEdit
+      ? `<i class="fa-solid fa-toggle-on text-emerald-600"></i><span class="hidden md:inline ml-1">Cán sự: Mở ghi</span>`
+      : `<i class="fa-solid fa-toggle-off text-slate-400"></i><span class="hidden md:inline ml-1">Cán sự: Khóa ghi</span>`;
+  }
+  updateLeaderPermissionStatusPill();
+}
+
+function updateLeaderPermissionStatusPill() {
+  if (!appState.currentUser) return;
+  const role = appState.roleLevel || "GUEST";
+  const isGVCN = role === "GVCN";
+  const isStudent = role === "STUDENT";
+  if (isGVCN || isStudent) {
+    const oldPill = document.getElementById("leaderLivePermissionPill");
+    if (oldPill) oldPill.remove();
+    return;
+  }
+
+  let pill = document.getElementById("leaderLivePermissionPill");
+  const badgeAnchor = document.getElementById("currentUserRoleBadge");
+  if (!pill && badgeAnchor && badgeAnchor.parentElement) {
+    pill = document.createElement("span");
+    pill.id = "leaderLivePermissionPill";
+    pill.className = "ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1";
+    badgeAnchor.parentElement.appendChild(pill);
+  }
+  if (pill) {
+    if (appState.allowStudentLeaderEdit) {
+      pill.className = "ml-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black inline-flex items-center gap-1";
+      pill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i> Đang mở ghi`;
+    } else {
+      pill.className = "ml-1.5 px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black inline-flex items-center gap-1";
+      pill.innerHTML = `<i class="fa-solid fa-lock text-rose-600"></i> GVCN đã khóa ghi`;
+    }
+  }
+}
+
+function applyRolePermissions(shouldAutoRouteTab = false) {
+  if (!appState.currentUser) return;
+
+  // Đồng bộ tức thời chức vụ & quyền hạn mới nhất từ danh sách lớp (không cần đăng xuất)
+  if (appState.currentUser.studentId && Array.isArray(appState.students)) {
+    const freshSt = appState.students.find(s => s.id === appState.currentUser.studentId);
+    if (freshSt) {
+      const prevRoleLevel = appState.currentUser.roleLevel;
+      const prevRoleName = appState.currentUser.role;
+      const nextRoleName = freshSt.chucVu || "Thành viên";
+      const nextRoleLevel = deriveRoleLevelFromChucVu(nextRoleName);
+
+      appState.currentUser.fullName = freshSt.hoTen || appState.currentUser.fullName;
+      appState.currentUser.role = nextRoleName;
+      appState.currentUser.roleLevel = nextRoleLevel;
+      appState.currentUser.team = freshSt.to || appState.currentUser.team;
+      localStorage.setItem("10A12_SESSION_USER", JSON.stringify(appState.currentUser));
+
+      if (prevRoleLevel && prevRoleLevel !== nextRoleLevel && nextRoleLevel !== "STUDENT") {
+        trySilentTokenExchange();
+        showRolePromotionToast(nextRoleName);
+      } else if (prevRoleName && prevRoleName !== nextRoleName && nextRoleLevel !== "STUDENT") {
+        showRolePromotionToast(nextRoleName);
+      }
+    }
+  }
+
+  const role = appState.currentUser.roleLevel || "GUEST";
+  appState.roleLevel = role;
+
+  const nameEl = document.getElementById("currentUserNameText");
+  const roleEl = document.getElementById("currentUserRoleBadge");
+  if (nameEl) nameEl.innerText = appState.currentUser.fullName;
+  if (roleEl) roleEl.innerText = appState.currentUser.role;
+
+  const isGVCN = (role === "GVCN");
+  const isStudent = (role === "STUDENT");
+  const hasStudentPortal = Boolean(appState.currentUser.studentId);
+  const canEditSeating = canCurrentUserEditSeating();
+  const canEditFund = canManageFund();
+  const canEditVtm = canManageVtm();
+
+  toggleEl("btnMasterSwitch", isGVCN);
+  updateMasterSwitchButtonUI();
+  toggleEl("btn-tab-tam-tu", isGVCN);
+  toggleEl("btn-side-tab-tam-tu", isGVCN);
+  toggleEl("btn-tab-cai-dat", isGVCN);
+  toggleEl("btn-side-tab-cai-dat", isGVCN);
+  toggleEl("btn-tab-ca-nhan", hasStudentPortal);
+  toggleEl("btn-side-tab-ca-nhan", hasStudentPortal);
+
+  // Tối ưu thanh điều hướng Mobile cho từng vai trò Ban cán sự
+  if (!isGVCN && !isStudent) {
+    toggleEl("btn-tab-lao-dong", true);
+    toggleEl("btn-tab-quy-lop", true);
+    toggleEl("btn-tab-van-the-my", true);
+    toggleEl("btn-tab-thi-dua", true);
+  }
+
+  toggleEl("btnLockWeekAction", isGVCN);
+  toggleEl("btnRotateSeating", canEditSeating);
+  toggleEl("btnSaveSeating", canEditSeating);
+  toggleEl("btnSaveSeatingHistory", canEditSeating);
+  toggleEl("btnUploadTkb", isGVCN);
+  toggleEl("btnEditTkb", isGVCN);
+  toggleEl("btnAddVtmEvent", canEditVtm);
+  toggleEl("btnUploadMedia", canEditVtm);
+  toggleEl("btnOpenNewCampaign", canEditFund);
+  toggleEl("btnManageCampaigns", canEditFund);
+  toggleEl("btnOpenAddIncome", canEditFund);
+  toggleEl("btnOpenAddExpense", canEditFund);
+  toggleEl("btnSaveFundState", canEditFund);
+  toggleEl("btnImportExcel", isGVCN);
+  toggleEl("btnAddNewStudent", isGVCN);
+  toggleEl("btnAssignRole", isGVCN);
+  toggleEl("btnResetWeeklyScores", isGVCN);
+  toggleEl("btnSaveStudentChanges", isGVCN);
+  toggleEl("btnDeleteStudent", isGVCN);
+
+  if (isStudent) {
+    switchTab("tab-ca-nhan");
+  } else if (shouldAutoRouteTab) {
+    const landingTab = getDefaultLandingTabForRole(role);
+    if (landingTab && landingTab !== "tab-tong-quan") {
+      switchTab(landingTab);
+    }
+  }
+}
+
+
+function showRolePromotionToast(newRoleName) {
+  let toast = document.getElementById("liveRolePromotionToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "liveRolePromotionToast";
+    toast.className = "fixed bottom-20 md:bottom-6 right-4 z-50 max-w-sm p-4 rounded-2xl bg-slate-900 text-white shadow-2xl border border-amber-400/50 flex items-start gap-3 text-xs";
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = `
+    <div class="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center text-base shrink-0">
+      <i class="fa-solid fa-crown"></i>
+    </div>
+    <div class="space-y-1 flex-1">
+      <b class="text-amber-300 uppercase block">Cập nhật chức vụ tức thời!</b>
+      <p class="text-slate-100 leading-snug">GVCN vừa bổ nhiệm bạn giữ chức vụ: <b class="text-white">${escapeHtml(newRoleName)}</b>. Toàn bộ quyền điều hành đã được mở khóa ngay!</p>
+    </div>
+    <button type="button" onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+  `;
+}
+
+function renderStudentPortal() {
+  if (!appState.currentUser || !appState.currentUser.studentId) return;
+  const st = (appState.students || []).find(s => s.id === appState.currentUser.studentId);
+  if (!st) return;
+
+  const cleanScore = parseScore(st.diemThiDua, 100);
+  const roleDisplay = st.chucVu || appState.currentUser.role || "Thành viên";
+  const teamDisplay = st.to || appState.currentUser.team || "Tổ 1";
+
+  // Cập nhật các phần tử trên Góc Học Sinh nếu có sẵn trong DOM
+  const setTxt = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = val;
+  };
+  setTxt("portalStudentName", st.hoTen);
+  setTxt("portalStudentRoleMeta", `${teamDisplay} • Chức vụ: ${roleDisplay}`);
+  setTxt("portalStudentScore", `${cleanScore}đ`);
+
+  // Vá trực tiếp mọi hiển thị điểm tràn số (-2200547190000đ) hoặc chức vụ cũ bên trong #tab-ca-nhan
+  const tabCaNhan = document.getElementById("tab-ca-nhan");
+  if (!tabCaNhan) return;
+
+  // Tìm vị trí ghế ngồi chuẩn từ sơ đồ đã lọc
+  const layout = sanitizeSeatingLayoutWithRoster(currentSeatingLayout);
+  let seatText = "Theo phân công GVCN";
+  const targetClean = removeVietnameseTones(st.hoTen);
+  for (let r = 0; r < layout.length; r++) {
+    for (let c = 0; c < (layout[r] || []).length; c++) {
+      if (layout[r][c] && removeVietnameseTones(layout[r][c].name) === targetClean) {
+        const daySo = Math.floor(c / 2) + 1;
+        const banSo = layout.length - r;
+        const side = (c % 2 === 0) ? "Ghế Trái" : "Ghế Phải";
+        seatText = `Dãy ${daySo} • Bàn ${banSo} • ${side}`;
+      }
+    }
+  }
+
+  // Tính tình trạng quỹ lớp chính xác từ appState.campaigns & appState.fundPayments
+  const campaigns = Array.isArray(appState.campaigns) ? appState.campaigns : [];
+  const payments = Array.isArray(appState.fundPayments) ? appState.fundPayments : [];
+  const unpaidCamps = campaigns.filter(c => {
+    const p = payments.find(x => x.campaignId === c.id && x.studentId === st.id);
+    return !(p && p.isPaid);
+  });
+  const totalUnpaidAmount = unpaidCamps.reduce((sum, c) => sum + (Number(c.target) || 0), 0);
+
+  // Chèn hoặc cập nhật Thẻ Tổng Hợp Cá Nhân Chuẩn Xác ở đầu #tab-ca-nhan
+  let summaryCard = document.getElementById("studentLiveSyncSummaryBanner");
+  if (!summaryCard) {
+    summaryCard = document.createElement("div");
+    summaryCard.id = "studentLiveSyncSummaryBanner";
+    summaryCard.className = "p-4 sm:p-5 rounded-3xl bg-white border-2 border-sky-200 shadow-xs space-y-3 mb-4";
+    tabCaNhan.insertBefore(summaryCard, tabCaNhan.firstChild);
+  }
+
+  // Ẩn khung cũ phía dưới nếu có số tràn (-220054719...) để giao diện luôn sạch đẹp
+  Array.from(tabCaNhan.children).forEach(ch => {
+    if (ch.id === "studentLiveSyncSummaryBanner" || ch.id === "studentPasswordChangeCard") return;
+    if ((ch.innerText || "").includes("ĐIỂM RÈN LUYỆN TUẦN") || (ch.innerText || "").includes("-2200")) {
+      ch.style.display = "none";
+    }
+  });
+
+  const isTreasurer = deriveRoleLevelFromChucVu(roleDisplay) === "TREASURER";
+  const isAnyLeader = deriveRoleLevelFromChucVu(roleDisplay) !== "STUDENT";
+
+  summaryCard.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="text-lg sm:text-xl font-black text-slate-900">${escapeHtml(st.hoTen)}</h3>
+          <span class="px-2.5 py-0.5 rounded-lg bg-sky-50 text-sky-800 border border-sky-200 text-xs font-black">${escapeHtml(teamDisplay)}</span>
+          <span class="px-2.5 py-0.5 rounded-lg ${isAnyLeader ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-100 text-slate-700 border-slate-200'} border text-xs font-black">
+            ${escapeHtml(roleDisplay)}
+          </span>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-1">Mã học sinh: <b class="font-mono text-slate-800">${escapeHtml(st.id)}</b> • Đồng bộ trực tiếp với Sổ Chủ Nhiệm</p>
+      </div>
+
+      <div class="text-left sm:text-right">
+        <span class="text-[10px] font-black uppercase text-slate-400 block">Điểm rèn luyện tuần ${appState.selectedWeek}</span>
+        <b class="text-2xl sm:text-3xl font-black font-mono ${cleanScore >= 90 ? 'text-emerald-600' : (cleanScore >= 70 ? 'text-amber-600' : 'text-rose-600')}">
+          ${cleanScore}đ
+        </b>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+      <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+        <span class="text-[10px] font-black uppercase text-slate-400 block"><i class="fa-solid fa-chair text-sky-600 mr-1"></i>Vị trí chỗ ngồi của em</span>
+        <b class="text-slate-900 text-sm block">${escapeHtml(seatText)}</b>
+      </div>
+
+      <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+        <span class="text-[10px] font-black uppercase text-slate-400 block"><i class="fa-solid fa-wallet text-teal-600 mr-1"></i>Tình trạng quỹ lớp</span>
+        ${unpaidCamps.length === 0 ? `
+          <b class="text-emerald-700 text-sm block"><i class="fa-solid fa-circle-check mr-1"></i>Đã hoàn thành tất cả đợt quỹ</b>
+        ` : `
+          <b class="text-rose-600 text-sm block">Chưa nộp (${totalUnpaidAmount.toLocaleString("vi-VN")} đ)</b>
+          <span class="text-[10.5px] text-slate-500 block truncate">${escapeHtml(unpaidCamps.map(c => c.title).join(", "))}</span>
+        `}
+      </div>
+
+      <div class="p-3 rounded-2xl bg-indigo-50/50 border border-indigo-200 flex flex-col justify-between gap-2">
+        <span class="text-[10px] font-black uppercase text-indigo-800 block"><i class="fa-solid fa-bolt text-amber-500 mr-1"></i>Nhiệm vụ điều hành</span>
+        ${isTreasurer ? `
+          <button type="button" onclick="switchTab('tab-quy-lop')" class="w-full py-1.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs transition">
+            <i class="fa-solid fa-coins mr-1"></i> Mở Sổ Quản Lý Quỹ Lớp
+          </button>
+        ` : (isAnyLeader ? `
+          <button type="button" onclick="switchTab('tab-thi-dua')" class="w-full py-1.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition">
+            <i class="fa-solid fa-clipboard-check mr-1"></i> Vào Bảng Điều Hành Lớp
+          </button>
+        ` : `
+          <span class="text-slate-600 font-medium">Chấp hành tốt nội quy & theo dõi điểm tuần</span>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+function toggleEl(id, show) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (show) el.classList.remove("hidden");
+  else el.classList.add("hidden");
+}
+
+async function toggleMasterEditSwitch() {
+  if (appState.roleLevel !== "GVCN") return;
+  appState.allowStudentLeaderEdit = !appState.allowStudentLeaderEdit;
+  saveStateToLocal();
+  applyRolePermissions(false);
+  renderAllSections();
+  await callApi("saveConfig", { allowStudentLeaderEdit: appState.allowStudentLeaderEdit }, "POST");
+  alert(appState.allowStudentLeaderEdit ? "Đã MỞ quyền ghi nhận nề nếp, trực nhật, quỹ & sơ đồ cho Ban cán sự lớp!" : "Đã KHÓA quyền chỉnh sửa của Ban cán sự lớp (chuyển sang chế độ chỉ xem)!");
+}
+
+// ==================== 8. TOP TICKER LỜI CHÚC & THÔNG ĐIỆP ====================
+function updateCelebrationTicker() {
+  const tickerEl = document.getElementById("topBannerTicker");
+  const dateEl = document.getElementById("topBannerDate");
+  const now = new Date();
+
+  if (dateEl) dateEl.innerText = now.toLocaleDateString("vi-VN");
+  if (!tickerEl) return;
+
+  if (appState.customTicker && appState.customTicker.trim() !== "") {
+    tickerEl.innerHTML = `<i class="fa-solid fa-bullhorn mr-1.5 text-amber-300"></i><b>Lời nhắn của Thầy:</b> ${escapeHtml(appState.customTicker)}`;
+    return;
+  }
+
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+
+  if (m === 11 && d === 20) {
+    tickerEl.innerHTML = `🎓💐 Tri ân Ngày Nhà giáo Việt Nam 20/11! Kính chúc Thầy chủ nhiệm luôn mạnh khỏe, hạnh phúc và tràn đầy nhiệt huyết!`;
+  } else if (m === 3 && d === 8) {
+    tickerEl.innerHTML = `💐 Chào mừng Ngày Quốc tế Phụ nữ 8/3! Chúc các bạn nữ 10A12 luôn vui tươi, xinh đẹp và tỏa sáng!`;
+  } else if (m === 3 && d === 26) {
+    tickerEl.innerHTML = `🇻🇳 Nhiệt liệt chào mừng Ngày thành lập Đoàn 26/3! Tuổi trẻ K58 THPT số 1 Quang Trung tiên phong, sáng tạo!`;
+  } else if (m === 10 && d === 20) {
+    tickerEl.innerHTML = `🌷 Chúc mừng Ngày Phụ nữ Việt Nam 20/10! Gửi ngàn lời chúc yêu thương đến nữ sinh tập thể 10A12!`;
+  } else {
+    tickerEl.innerHTML = `⭐ Chúc tập thể 10A12 mỗi ngày đến trường là một ngày vui — Học tập chăm chỉ, chấp hành nghiêm nề nếp!`;
+  }
+}
+
+async function saveCustomBannerTicker() {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ GVCN mới có quyền cập nhật thông điệp tiêu đề lớp!");
+    return;
+  }
+  const input = document.getElementById("customBannerTickerInput");
+  if (!input) return;
+  appState.customTicker = input.value.trim();
+  saveStateToLocal();
+  updateCelebrationTicker();
+  await callApi("saveConfig", { customTicker: appState.customTicker }, "POST");
+  alert("Đã cập nhật thông điệp lên thanh tiêu đề!");
+}
+
+// ==================== 9. BANNER TIẾN ĐỘ TIẾT HỌC THỜI GIAN THỰC ====================
+function updateLiveDashboardEngine() {
+  const now = new Date();
+  const day = now.getDay();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const clockEl = document.getElementById("digitalClockText");
+  if (clockEl) clockEl.innerText = now.toLocaleTimeString('vi-VN');
+
+  const dutySchedule = { 1: "Tổ 1 (Sáng) • Tổ 2 (Chiều)", 2: "Tổ 3 (Sáng) • Tổ 4 (Chiều)", 3: "Tổ 1 (Sáng)", 4: "Tổ 2 (Sáng)", 5: "Tổ 3 & Tổ 4 (Sáng)" };
+  const dutyTeam = document.getElementById("liveDutyTeam");
+  if (dutyTeam) dutyTeam.innerText = dutySchedule[day] || "Nghỉ";
+
+  let periodName = "Ngoài giờ lên lớp";
+  let subjectDetail = "Không có môn học";
+  let percent = 0;
+  let remain = 0;
+
+  const dayKey = `t${day + 1}`;
+  const isMorning = currentMinutes < 720;
+
+  if (day >= 1 && day <= 6) {
+    const activeTkb = getActiveTkbConfig();
+    const periods = isMorning ? activeTkb.morning : activeTkb.afternoon;
+    const timeRanges = isMorning ? [
+      { p: 1, start: 7 * 60, end: 7 * 60 + 45 },
+      { p: 2, start: 7 * 60 + 50, end: 8 * 60 + 35 },
+      { p: 3, start: 8 * 60 + 55, end: 9 * 60 + 40 },
+      { p: 4, start: 9 * 60 + 45, end: 10 * 60 + 30 },
+      { p: 5, start: 10 * 60 + 35, end: 11 * 60 + 20 }
+    ] : [
+      { p: 1, start: 14 * 60, end: 14 * 60 + 45 },
+      { p: 2, start: 14 * 60 + 50, end: 15 * 60 + 35 },
+      { p: 3, start: 15 * 60 + 55, end: 16 * 60 + 40 }
+    ];
+
+    const cur = timeRanges.find(r => currentMinutes >= r.start && currentMinutes < r.end);
+    if (cur) {
+      const pData = periods.find(p => p.period === cur.p);
+      const subject = pData ? pData[dayKey] : "-";
+      periodName = `${isMorning ? 'Sáng' : 'Chiều'} • Tiết ${cur.p}`;
+      subjectDetail = (subject && subject !== "-" && subject !== "—") ? subject : "Tự học / Tiết chờ";
+      
+      const total = cur.end - cur.start;
+      const elapsed = currentMinutes - cur.start;
+      percent = Math.min(100, Math.round((elapsed / total) * 100));
+      remain = cur.end - currentMinutes;
+    }
+  }
+
+  const bannerTitle = document.getElementById("liveBannerTitle");
+  if (bannerTitle) bannerTitle.innerText = `${periodName}: ${subjectDetail}`;
+
+  const progressLabel = document.getElementById("currentPeriodLabel");
+  const progressRemaining = document.getElementById("periodTimeRemaining");
+  const progressBar = document.getElementById("periodProgressBar");
+
+  if (progressLabel) progressLabel.innerText = subjectDetail !== "Không có môn học" ? `Môn: ${subjectDetail}` : "Ngoài giờ tiết học";
+  if (progressRemaining) progressRemaining.innerText = remain > 0 ? `Còn ${remain}p (${percent}%)` : `${percent}%`;
+  if (progressBar && progressBar.style) progressBar.style.width = `${percent}%`;
+}
+
+function formatTkbHeaderTitleText(cfg) {
+  const activeCfg = cfg || getActiveTkbConfig();
+  const fullVersion = activeCfg.version || (activeCfg.effectiveDate ? `${activeCfg.versionLabel} (Từ ${activeCfg.effectiveDate})` : activeCfg.versionLabel);
+  return `Thời Khóa Biểu Lớp 10A12 • ${fullVersion}`;
+}
+
+function renderTkbVersionLabels() {
+  const cfg = getActiveTkbConfig();
+  const vLabel = cfg.versionLabel || "Số 4";
+  const eDate = cfg.effectiveDate || "";
+
+  const setTxt = (id, txt) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = txt;
+  };
+
+  setTxt("btn-tab-tkb", `TKB ${vLabel}`);
+  setTxt("navTkbSideLabel", `Thời khóa biểu (${vLabel})`);
+  setTxt("liveBannerSub", `THỜI KHÓA BIỂU ${vLabel.toUpperCase()}${eDate ? ` • TỪ ${eDate}` : ""}`);
+  setTxt("dashTkbTitle", `TKB ${vLabel}${eDate ? ` (${eDate})` : ""}`);
+  setTxt("sdbTkbHeading", `Sổ Đầu Bài Điện Tử (Theo TKB ${vLabel})`);
+  setTxt("zoomTkbTitle", `Thời Khóa Biểu ${vLabel} - Lớp 10A12`);
+  setTxt("shlTkbRef1", `Thời khóa biểu ${vLabel}`);
+  setTxt("shlTkbRef2", `Thời khóa biểu ${vLabel}`);
+
+  const headerTitleEl = document.getElementById("tkbHeaderTitle");
+  if (headerTitleEl) {
+    const fullText = formatTkbHeaderTitleText(cfg);
+    headerTitleEl.innerText = fullText;
+    headerTitleEl.innerHTML = `<i class="fa-solid fa-calendar-days text-indigo-700"></i> ${escapeHtml(fullText)}`;
+  }
+
+  const hintEl = document.getElementById("tkbTableSyncHint");
+  if (hintEl) hintEl.classList.add("hidden");
+}
+
+// ==================== 10. TAB 1: TỔNG QUAN (LƯỚI 7 Ô BUỔI HỌC CÓ CHI TIẾT LỖI) ====================
+function renderOverviewDashboard() {
+  const scoped = getScopedWeekData();
+  const avg = scoped.students.length > 0
+    ? (scoped.students.reduce((acc, s) => acc + parseScore(s.diemThiDua, 100), 0) / scoped.students.length).toFixed(1)
+    : "100.0";
+  const avgEl = document.getElementById("dashAvgScore");
+  if (avgEl) avgEl.innerText = `${avg}đ`;
+
+  const totalEl = document.getElementById("dashTotalStudents");
+  if (totalEl) totalEl.innerText = `${appState.students.length} / ${appState.students.length}`;
+
+  const fundEl = document.getElementById("dashFundBalance");
+  if (fundEl) fundEl.innerText = `${(appState.fundSummary.balance || 0).toLocaleString()} đ`;
+
+  renderTkbVersionLabels();
+  renderTT22Summary();
+  renderTopCommendations();
+  renderSessionsGrid();
+}
+
+function renderTT22Summary() {
+  const scoped = getScopedWeekData();
+  const total = scoped.students.length || 45;
+  let tot = 0, kha = 0, dat = 0, chuadat = 0;
+
+  scoped.students.forEach(s => {
+    const pts = parseScore(s.diemThiDua, 100);
+    if (pts >= 90) tot++;
+    else if (pts >= 70) kha++;
+    else if (pts >= 50) dat++;
+    else chuadat++;
+  });
+
+  const totEl = document.getElementById("tt22TotCount");
+  const khaEl = document.getElementById("tt22KhaCount");
+  const datEl = document.getElementById("tt22DatCount");
+  const chuadatEl = document.getElementById("tt22ChuaDatCount");
+
+  if (totEl) totEl.innerText = `${tot} HS (${Math.round(tot / total * 100)}%)`;
+  if (khaEl) khaEl.innerText = `${kha} HS (${Math.round(kha / total * 100)}%)`;
+  if (datEl) datEl.innerText = `${dat} HS (${Math.round(dat / total * 100)}%)`;
+  if (chuadatEl) chuadatEl.innerText = `${chuadat} HS (${Math.round(chuadat / total * 100)}%)`;
+}
+
+function renderTopCommendations() {
+  const container = document.getElementById("topCommendationsList");
+  if (!container) return;
+
+  const scoped = getScopedWeekData();
+  const plusMap = {};
+  scoped.violations.forEach(v => {
+    const pts = parseScore(v.points, 0);
+    if (pts > 0) {
+      plusMap[v.studentId] = (plusMap[v.studentId] || 0) + pts;
+    }
+  });
+
+  const topStudents = Object.keys(plusMap)
+    .map(stId => {
+      const st = scoped.students.find(s => s.id === stId) || appState.students.find(s => s.id === stId);
+      return { id: stId, name: st ? st.hoTen : stId, team: st ? st.to : "", pts: plusMap[stId] };
+    })
+    .sort((a, b) => b.pts - a.pts)
+    .slice(0, 3);
+
+  if (topStudents.length === 0) {
+    container.innerHTML = `<p class="text-xs text-slate-400 italic py-2"><i class="fa-solid fa-star text-amber-500 mr-1.5"></i>Chưa có điểm cộng ghi nhận tuần này. Tích cực phát biểu và làm việc tốt nhé!</p>`;
+    return;
+  }
+
+  container.innerHTML = topStudents.map((st, idx) => `
+    <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-xs flex items-center justify-center">${idx + 1}</span>
+        <div>
+          <p class="text-xs font-black text-slate-800">${escapeHtml(st.name)} <span class="text-[10px] text-slate-500">(${escapeHtml(st.team)})</span></p>
+          <span class="text-[10px] text-emerald-700 font-medium">Biểu dương việc tốt / phát biểu</span>
+        </div>
+      </div>
+      <span class="text-xs font-black text-emerald-700">+${st.pts}đ</span>
+    </div>
+  `).join("");
+}
+
+function renderSessionsGrid() {
+  const container = document.getElementById("sessionsGridContainer");
+  if (!container) return;
+
+  const scoped = getScopedWeekData();
+  const sessions = [
+    { key: "T2_SANG", name: "Sáng Thứ 2", icon: "fa-sun text-amber-500", timeRange: "06:45 - 11:20" },
+    { key: "T2_CHIEU", name: "Chiều Thứ 2", icon: "fa-cloud-sun text-indigo-500", timeRange: "13:45 - 16:40" },
+    { key: "T3_SANG", name: "Sáng Thứ 3", icon: "fa-sun text-amber-500", timeRange: "06:45 - 11:20" },
+    { key: "T3_CHIEU", name: "Chiều Thứ 3", icon: "fa-cloud-sun text-indigo-500", timeRange: "13:45 - 16:40" },
+    { key: "T4_SANG", name: "Sáng Thứ 4", icon: "fa-sun text-amber-500", timeRange: "06:45 - 11:20" },
+    { key: "T5_SANG", name: "Sáng Thứ 5", icon: "fa-sun text-amber-500", timeRange: "06:45 - 11:20" },
+    { key: "T6_SANG", name: "Sáng Thứ 6", icon: "fa-sun text-amber-500", timeRange: "06:45 - 11:20" }
+  ];
+
+  const isGVCN = (appState.roleLevel === "GVCN");
+
+  container.innerHTML = sessions.map(sess => {
+    const sessViolations = scoped.violations.filter(v => v.time && v.time.includes(sess.name));
+
+    const absentExcused = sessViolations.filter(v => v.criteria && v.criteria.includes("Có phép")).length;
+    const absentUnexcused = sessViolations.filter(v => v.criteria && (v.criteria.includes("Không phép") || v.criteria.includes("K.Phép"))).length;
+    const totalAbsent = absentExcused + absentUnexcused;
+    const lateCount = sessViolations.filter(v => v.criteria && v.criteria.includes("trễ")).length;
+
+    const nonPresentEvents = sessViolations.filter(v => !v.criteria || !v.criteria.includes("Có mặt"));
+    const totalEvents = nonPresentEvents.length;
+    const isGood = (totalEvents === 0);
+
+    return `
+      <div class="p-3.5 sm:p-4 rounded-2xl bg-white border ${isGood ? 'border-slate-200' : 'border-amber-300 bg-amber-50/15'} shadow-xs flex flex-col justify-between space-y-3">
+        <div>
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid ${sess.icon} text-base"></i>
+              <div>
+                <h4 class="font-black text-xs sm:text-sm text-slate-800 uppercase tracking-tight">${sess.name}</h4>
+                <span class="text-[9.5px] text-slate-400 font-mono block">${sess.timeRange}</span>
+              </div>
+            </div>
+            <span class="text-[10px] font-black px-2.5 py-0.5 rounded-full ${isGood ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}">
+              ${isGood ? 'Tốt (100%)' : `${totalEvents} phát sinh`}
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5 mt-2.5 text-[11px]">
+            <div class="p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+              <span class="text-[10px] text-slate-500 font-bold uppercase">Vắng:</span>
+              <b class="${totalAbsent > 0 ? 'text-rose-600' : 'text-slate-700'}">${totalAbsent} em ${absentUnexcused > 0 ? `<span class="text-[9px] text-rose-500">(${absentUnexcused} KP)</span>` : ''}</b>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+              <span class="text-[10px] text-slate-500 font-bold uppercase">Đi trễ:</span>
+              <b class="${lateCount > 0 ? 'text-amber-600' : 'text-slate-700'}">${lateCount} em</b>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+          ${isGood ? `
+            <div class="py-4 text-center text-emerald-600 space-y-1">
+              <i class="fa-solid fa-circle-check text-lg"></i>
+              <p class="text-[11px] font-bold">Buổi học chấp hành nề nếp xuất sắc.</p>
+            </div>
+          ` : nonPresentEvents.map((v) => {
+            const pts = parseScore(v.points, 0);
+            const isPlus = pts > 0;
+            const pointsClass = isPlus ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200';
+            const globalIdx = appState.violations.indexOf(v);
+            const removeKey = v.incidentKey || String(globalIdx);
+
+            return `
+              <div class="p-2 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1 text-xs hover:border-slate-300 transition">
+                <div class="flex items-center justify-between gap-1">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="w-1.5 h-1.5 rounded-full ${isPlus ? 'bg-emerald-500' : 'bg-rose-500'} shrink-0"></span>
+                    <b class="text-slate-900 font-black truncate">${escapeHtml(v.studentName)}</b>
+                    <span class="text-[9.5px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-bold shrink-0">${escapeHtml(getStudentTeam(v.studentId))}</span>
+                  </div>
+                  <span class="font-mono font-black text-[11px] px-1.5 py-0.5 rounded border ${pointsClass} shrink-0">
+                    ${isPlus ? '+' : ''}${pts}đ
+                  </span>
+                </div>
+
+                <p class="text-[11px] text-slate-700 leading-snug whitespace-normal break-words pl-3">
+                  ${escapeHtml(v.criteria)}
+                </p>
+
+                <div class="flex items-center justify-between text-[9.5px] text-slate-400 pl-3 pt-0.5 border-t border-slate-50">
+                  <span>${v.note ? `${escapeHtml(v.note)} • ` : ''}${escapeHtml(v.sender || 'Cán sự')}</span>
+                  ${isGVCN && scoped.isEditable ? `
+                    <button onclick="removeViolationItem('${escapeAttr(removeKey)}', '${escapeAttr(v.studentId)}', ${pts})" class="text-slate-400 hover:text-rose-600 font-bold p-0.5" title="Xóa bản ghi này">
+                      <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+
+        <div class="pt-2 border-t border-slate-100 flex items-center gap-1.5">
+          <button onclick="quickGoToAttendanceSession('${sess.key}')" class="flex-1 py-1.5 rounded-xl bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-200 text-[11px] font-bold transition flex items-center justify-center gap-1">
+            <i class="fa-solid fa-clipboard-user"></i> Điểm danh ca
+          </button>
+          <button onclick="openQuickScoreModalForSession('${sess.name}')" class="flex-1 py-1.5 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 text-[11px] font-bold transition flex items-center justify-center gap-1">
+            <i class="fa-solid fa-plus text-amber-600"></i> + Chấm lỗi/khen
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function quickGoToAttendanceSession(sessionKey) {
+  const sel = document.getElementById("attendanceSessionSelect");
+  if (sel) {
+    sel.value = sessionKey;
+    if (typeof changeAttendanceSession === "function") changeAttendanceSession(sessionKey);
+  }
+  switchTab("tab-thi-dua");
+}
+
+function openQuickScoreModalForSession(sessionName) {
+  const key = getSessionKeyByName(sessionName);
+  appState.currentSessionKey = key;
+  appState.currentSessionLabel = sessionName || getSessionLabel(key);
+  const sel = document.getElementById("attendanceSessionSelect");
+  if (sel) sel.value = key;
+  if (typeof openQuickScoreModal === "function") openQuickScoreModal("", "");
+}
+
+async function removeViolationItem(incidentKeyOrIdx, studentId, points) {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ Thầy chủ nhiệm mới có quyền xóa bản ghi nề nếp!");
+    return;
+  }
+  const scoped = getScopedWeekData();
+  if (!scoped.isEditable) {
+    alert("Tuần học này đã lưu trữ, không thể chỉnh sửa bản ghi lịch sử!");
+    return;
+  }
+  if (!confirm("Thầy có chắc chắn muốn xóa bản ghi nề nếp này và hoàn lại điểm cho học sinh?")) return;
+
+  const numPts = parseScore(points, 0);
+  const st = appState.students.find(s => s.id === studentId);
+  if (st) {
+    st.diemThiDua = Math.max(0, parseScore(st.diemThiDua, 100) - numPts);
+  }
+
+  let matchedRecord = null;
+  if (incidentKeyOrIdx && !/^\d+$/.test(String(incidentKeyOrIdx))) {
+    matchedRecord = appState.violations.find(v => v.incidentKey === incidentKeyOrIdx);
+    appState.violations = appState.violations.filter(v => v.incidentKey !== incidentKeyOrIdx);
+  } else {
+    const idx = parseInt(incidentKeyOrIdx, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < appState.violations.length) {
+      matchedRecord = appState.violations[idx];
+      appState.violations.splice(idx, 1);
+    }
+  }
+
+  saveStateToLocal();
+  renderSessionsGrid();
+  renderOverviewDashboard();
+  if (typeof renderTeamDisciplineSummaryCards === "function") renderTeamDisciplineSummaryCards();
+  if (typeof renderAttendanceSession === "function") renderAttendanceSession();
+
+  const remoteKey = (matchedRecord && matchedRecord.incidentKey) || (incidentKeyOrIdx && !/^\d+$/.test(String(incidentKeyOrIdx)) ? incidentKeyOrIdx : "");
+  if (remoteKey) {
+    await callApi("deleteViolation", { incidentKey: remoteKey }, "POST");
+  }
+  alert("Đã xóa bản ghi và hoàn lại điểm cho học sinh thành công!");
+}
+
+// ==================== 23. TIỆN ÍCH DÙNG CHUNG ====================
+function getStudentTeam(stId) {
+  const st = appState.students.find(s => s.id === stId);
+  return st ? st.to : "Tổ 1";
+}
+
+function getTT22Label(pts) {
+  if (pts >= 90) return "Tốt";
+  if (pts >= 70) return "Khá";
+  if (pts >= 50) return "Đạt";
+  return "Chưa đạt";
+}
+
+function getParentLookupPortalUrl() {
+  const currentUrl = window.location.href.split("?")[0].split("#")[0];
+  const baseDir = currentUrl.substring(0, currentUrl.lastIndexOf("/"));
+  let lookupUrl = `${baseDir}/tracuu.html`;
+  if (appState && appState.currentUser && appState.currentUser.studentId) {
+    lookupUrl += `?hs=${encodeURIComponent(appState.currentUser.studentId)}`;
+  }
+  return lookupUrl;
+}
+
+let lastPortalOpenTimestamp = 0;
+
+function openParentLookupPortal(e) {
+  const ev = e || (typeof window !== "undefined" ? window.event : null);
+  if (ev) {
+    if (typeof ev.preventDefault === "function") ev.preventDefault();
+    if (typeof ev.stopPropagation === "function") ev.stopPropagation();
+    if (typeof ev.stopImmediatePropagation === "function") ev.stopImmediatePropagation();
+  }
+
+  // Chống kích hoạt kép (double trigger) nếu phần tử có cả href và onclick
+  const now = Date.now();
+  if (now - lastPortalOpenTimestamp < 600) {
+    return false;
+  }
+  lastPortalOpenTimestamp = now;
+
+  const targetUrl = getParentLookupPortalUrl();
+  const isMobileOrTouch = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "") || window.innerWidth < 768;
+
+  if (isMobileOrTouch) {
+    window.location.assign(targetUrl);
+  } else {
+    const win = window.open(targetUrl, "_blank", "noopener,noreferrer");
+    if (!win) {
+      window.location.assign(targetUrl);
+    }
+  }
+  return false;
+}
+
+// Giữ tên hàm cũ để tương thích 100% với onclick="copyParentLookupPortalLink()" trong index.html
+function copyParentLookupPortalLink(e) {
+  return openParentLookupPortal(e);
+}
+
+function upgradePortalButtonUI() {
+  document.querySelectorAll("button, a").forEach(el => {
+    const onClickAttr = el.getAttribute("onclick") || "";
+    const hrefAttr = el.getAttribute("href") || "";
+    const txt = (el.innerText || "").trim();
+    if (
+      onClickAttr.includes("copyParentLookupPortalLink") ||
+      onClickAttr.includes("openParentLookupPortal") ||
+      hrefAttr.includes("tracuu.html") ||
+      txt.includes("Cổng Tra Cứu")
+    ) {
+      const icon = el.querySelector("i.fa-share-nodes, i.fa-share-alt, i.fa-copy");
+      if (icon) {
+        icon.className = "fa-solid fa-arrow-up-right-from-square";
+      }
+      el.setAttribute("title", "Mở trực tiếp Cổng Tra Cứu Phụ Huynh & Học Sinh");
+
+      // Gỡ bỏ href="tracuu.html" & inline onclick để trình duyệt không bao giờ vừa chuyển trang hiện tại vừa mở tab mới
+      if (el.tagName === "A") {
+        el.setAttribute("href", "javascript:void(0)");
+        el.removeAttribute("target");
+      }
+      if (onClickAttr) {
+        el.removeAttribute("onclick");
+      }
+      if (!el.dataset.portalBound) {
+        el.dataset.portalBound = "1";
+        el.addEventListener("click", (ev) => {
+          openParentLookupPortal(ev);
+        });
+      }
+    }
+  });
+}
+
+// ==================== BỘ MÁY KIỂM SOÁT CHI TIẾT ĐIỂM & NỀ NẾP TUẦN ====================
+let disciplineScoreFilterMode = "ALL"; // ALL | PLUS | MINUS | CHANGED
+let disciplineLogScopeMode = "WEEK";    // WEEK | SESSION
+
+function getStudentWeeklyScoreBreakdown(studentId) {
+  const scoped = getScopedWeekData();
+  const st = scoped.students.find(s => s.id === studentId) || appState.students.find(s => s.id === studentId);
+  if (!st) return null;
+
+  const currentScore = parseScore(st.diemThiDua, 100);
+  const weekLogs = (scoped.violations || []).filter(v => v.studentId === studentId && (!v.criteria || !v.criteria.includes("Có mặt")));
+  const loggedDelta = weekLogs.reduce((sum, v) => sum + parseScore(v.points, 0), 0);
+  const actualDelta = currentScore - 100;
+  const unloggedDelta = actualDelta - loggedDelta;
+
+  return {
+    student: st,
+    week: scoped.selectedWeek,
+    isEditable: scoped.isEditable,
+    currentScore,
+    loggedDelta,
+    actualDelta,
+    unloggedDelta,
+    logs: weekLogs
+  };
+}
+
+function ensureDisciplineAuditModalExists() {
+  if (document.getElementById("studentDisciplineAuditModal")) return;
+  const modalHtml = `
+    <div id="studentDisciplineAuditModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 hidden" onclick="if(event.target===this) closeStudentDisciplineDetailModal()">
+      <div class="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2.5">
+            <div id="auditModalScoreBadge" class="w-11 h-11 rounded-2xl bg-emerald-600 text-white font-black text-base flex items-center justify-center shadow-xs">100</div>
+            <div>
+              <h3 id="auditModalStudentName" class="font-black text-slate-900 text-sm sm:text-base">Họ tên học sinh</h3>
+              <p id="auditModalStudentMeta" class="text-[11px] text-slate-500 font-medium">Mã HS • Tổ • Tuần học</p>
+            </div>
+          </div>
+          <button onclick="closeStudentDisciplineDetailModal()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div id="auditModalBody" class="overflow-y-auto py-3.5 space-y-3 pr-1 text-xs flex-1"></div>
+
+        <div id="auditModalFooter" class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap"></div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+}
+
+function openStudentDisciplineDetailModal(studentId) {
+  ensureDisciplineAuditModalExists();
+  const data = getStudentWeeklyScoreBreakdown(studentId);
+  if (!data) return;
+
+  const { student, week, isEditable, currentScore, loggedDelta, actualDelta, unloggedDelta, logs } = data;
+  const badgeEl = document.getElementById("auditModalScoreBadge");
+  const nameEl = document.getElementById("auditModalStudentName");
+  const metaEl = document.getElementById("auditModalStudentMeta");
+  const bodyEl = document.getElementById("auditModalBody");
+  const footerEl = document.getElementById("auditModalFooter");
+
+  if (badgeEl) {
+    badgeEl.innerText = `${currentScore}đ`;
+    badgeEl.className = currentScore > 100
+      ? "w-12 h-12 rounded-2xl bg-emerald-600 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0"
+      : (currentScore < 70
+        ? "w-12 h-12 rounded-2xl bg-rose-600 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0"
+        : (currentScore < 90
+          ? "w-12 h-12 rounded-2xl bg-amber-500 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0"
+          : "w-12 h-12 rounded-2xl bg-sky-600 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0"));
+  }
+  if (nameEl) nameEl.innerText = student.hoTen;
+  if (metaEl) metaEl.innerText = `${student.id} • ${student.to} • ${student.chucVu || "Thành viên"} • Tuần ${week}`;
+
+  const isGVCN = (appState.roleLevel === "GVCN");
+
+  let html = `
+    <div class="grid grid-cols-3 gap-2 text-center">
+      <div class="p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+        <span class="text-[10px] font-bold text-slate-400 uppercase block">Điểm gốc đầu tuần</span>
+        <b class="text-sm font-black text-slate-700 font-mono">100đ</b>
+      </div>
+      <div class="p-2.5 rounded-2xl ${actualDelta >= 0 ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200"} border">
+        <span class="text-[10px] font-bold ${actualDelta >= 0 ? "text-emerald-700" : "text-rose-700"} uppercase block">Biến động tuần</span>
+        <b class="text-sm font-black ${actualDelta >= 0 ? "text-emerald-700" : "text-rose-600"} font-mono">${actualDelta >= 0 ? "+" : ""}${actualDelta}đ</b>
+      </div>
+      <div class="p-2.5 rounded-2xl bg-sky-50 border border-sky-200">
+        <span class="text-[10px] font-bold text-sky-700 uppercase block">Điểm hiện tại</span>
+        <b class="text-sm font-black text-sky-900 font-mono">${currentScore}đ</b>
+      </div>
+    </div>
+  `;
+
+  if (unloggedDelta !== 0) {
+    html += `
+      <div class="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 space-y-1.5">
+        <div class="flex items-start gap-2">
+          <i class="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
+          <div>
+            <p class="font-black text-xs">Phát hiện chênh lệch ${unloggedDelta > 0 ? `+${unloggedDelta}đ` : `${unloggedDelta}đ`} từ dữ liệu đồng bộ!</p>
+            <p class="text-[11px] text-amber-800 leading-relaxed mt-0.5">
+              Điểm tổng của em đang là <b>${currentScore}đ</b>, nhưng nhật ký sự vụ tuần mới ghi nhận <b>${loggedDelta >= 0 ? `+${loggedDelta}đ` : `${loggedDelta}đ`}</b>. Khoản chênh lệch <b>${unloggedDelta > 0 ? `+${unloggedDelta}đ` : `${unloggedDelta}đ`}</b> này được nhập trực tiếp từ cột điểm trên Google Sheets hoặc chưa có dòng diễn giải.
+            </p>
+          </div>
+        </div>
+        ${isGVCN && isEditable ? `
+          <div class="flex items-center gap-2 pt-1 pl-5">
+            <button onclick="reconcileStudentScoreWithLogs('${escapeAttr(student.id)}')" class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition">
+              <i class="fa-solid fa-rotate mr-1"></i> Khớp lại thành ${100 + loggedDelta}đ theo Nhật ký
+            </button>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }
+
+  html += `<div class="space-y-2"><h4 class="font-black text-slate-800 uppercase text-[11px]">Toàn bộ lịch sử cộng / trừ điểm trong Tuần ${week} (${logs.length} lượt):</h4>`;
+
+  if (logs.length === 0) {
+    html += `
+      <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center text-slate-500 italic">
+        Chưa có bản ghi khen thưởng hay vi phạm nào trong nhật ký Tuần ${week}.
+      </div>
+    `;
+  } else {
+    html += logs.map(v => {
+      const pts = parseScore(v.points, 0);
+      const isPlus = pts > 0;
+      const globalIdx = appState.violations.indexOf(v);
+      const removeKey = v.incidentKey || String(globalIdx);
+      return `
+        <div class="p-3 rounded-2xl border ${isPlus ? "bg-emerald-50/40 border-emerald-200" : "bg-rose-50/40 border-rose-200"} flex items-center justify-between gap-2">
+          <div class="space-y-0.5 min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full ${isPlus ? "bg-emerald-500" : "bg-rose-500"} shrink-0"></span>
+              <b class="text-slate-900 font-bold">${escapeHtml(v.criteria)}</b>
+            </div>
+            <p class="text-[10.5px] text-slate-500 pl-3.5">
+              ${escapeHtml(v.time || "")} • Người ghi: <b>${escapeHtml(v.sender || "Cán sự")}</b>${v.note ? ` • <i>${escapeHtml(v.note)}</i>` : ""}
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="font-mono font-black text-xs px-2.5 py-1 rounded-xl border ${isPlus ? "bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-rose-100 text-rose-800 border-rose-300"}">
+              ${isPlus ? "+" : ""}${pts}đ
+            </span>
+            ${isGVCN && isEditable ? `
+              <button onclick="removeViolationItem('${escapeAttr(removeKey)}', '${escapeAttr(student.id)}', ${pts}); setTimeout(() => openStudentDisciplineDetailModal('${escapeAttr(student.id)}'), 120);" class="w-7 h-7 rounded-lg bg-white hover:bg-rose-600 text-slate-400 hover:text-white border border-slate-200 flex items-center justify-center transition" title="Xóa bản ghi này">
+                <i class="fa-solid fa-trash-can text-[11px]"></i>
+              </button>
+            ` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+  html += `</div>`;
+
+  if (bodyEl) bodyEl.innerHTML = html;
+
+  if (footerEl) {
+    footerEl.innerHTML = `
+      <button onclick="closeStudentDisciplineDetailModal(); openQuickScoreModal('${escapeAttr(student.id)}', '${escapeAttr(student.hoTen)}')" class="px-4 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 text-white font-black text-xs transition flex items-center gap-1.5">
+        <i class="fa-solid fa-plus"></i> Chấm thêm cộng/trừ điểm
+      </button>
+      <button onclick="closeStudentDisciplineDetailModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">
+        Đóng
+      </button>
+    `;
+  }
+
+  document.getElementById("studentDisciplineAuditModal").classList.remove("hidden");
+}
+
+function closeStudentDisciplineDetailModal() {
+  const modal = document.getElementById("studentDisciplineAuditModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function reconcileStudentScoreWithLogs(studentId) {
+  if (appState.roleLevel !== "GVCN") return;
+  const data = getStudentWeeklyScoreBreakdown(studentId);
+  if (!data) return;
+
+  const targetScore = Math.max(0, 100 + data.loggedDelta);
+  data.student.diemThiDua = targetScore;
+  saveStateToLocal();
+  renderAllSections();
+  openStudentDisciplineDetailModal(studentId);
+  await callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+  alert(`Đã đồng bộ lại điểm của em ${data.student.hoTen} thành ${targetScore}đ theo đúng Nhật ký sự vụ tuần!`);
+}
+
+function setDisciplineScoreFilter(mode) {
+  disciplineScoreFilterMode = mode;
+  applyDisciplineEnhancements();
+  renderDeletedStudentsArchiveSection();
+  bindDeleteStudentReasonInterceptor();
+  renderCentralizedRoleAppointmentCard();
+  renderSchoolYearStartSettingCard();
+  lockStudentProfileRoleField();
+  renderParentLeaveRequestsInbox();
+  renderSpecialViolationReportsSection();
+  renderYearEndConductGradingPanel();
+  renderProfileCorrectionsInbox();
+  renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
+  renderAllAccountsPasswordManagerCard();
+  injectStudentPhoneFieldInProfileModal();
+  enforceStickyDesktopSidebar();
+}
+
+function setDisciplineLogScope(scope) {
+  disciplineLogScopeMode = scope;
+  applyDisciplineEnhancements();
+  renderDeletedStudentsArchiveSection();
+  bindDeleteStudentReasonInterceptor();
+  renderCentralizedRoleAppointmentCard();
+  renderSchoolYearStartSettingCard();
+  lockStudentProfileRoleField();
+  renderParentLeaveRequestsInbox();
+  renderSpecialViolationReportsSection();
+  renderYearEndConductGradingPanel();
+  renderProfileCorrectionsInbox();
+  renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
+  renderAllAccountsPasswordManagerCard();
+  injectStudentPhoneFieldInProfileModal();
+  enforceStickyDesktopSidebar();
+}
+
+function applyDisciplineEnhancements() {
+  const tabThiDua = document.getElementById("tab-thi-dua");
+  if (!tabThiDua) return;
+
+  // 1. Chèn thanh lọc nhanh Điểm cộng (+) / Điểm trừ (-) nếu chưa có
+  let filterBar = document.getElementById("disciplineQuickFilterBar");
+  if (!filterBar) {
+    const gridContainer = tabThiDua.querySelector("#attendanceStudentGrid, #disciplineStudentCardsGrid, .grid");
+    if (gridContainer && gridContainer.parentElement) {
+      filterBar = document.createElement("div");
+      filterBar.id = "disciplineQuickFilterBar";
+      filterBar.className = "p-2.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs mb-3";
+      gridContainer.parentElement.insertBefore(filterBar, gridContainer);
+    }
+  }
+
+  const scoped = getScopedWeekData();
+  const plusStudents = scoped.students.filter(s => parseScore(s.diemThiDua, 100) > 100);
+  const minusStudents = scoped.students.filter(s => parseScore(s.diemThiDua, 100) < 100);
+
+  if (filterBar) {
+    const btnCls = (m) => disciplineScoreFilterMode === m
+      ? "px-3 py-1.5 rounded-xl bg-slate-900 text-white font-black shadow-2xs"
+      : "px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold border border-slate-200";
+    filterBar.innerHTML = `
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <span class="text-[11px] font-black text-slate-500 uppercase mr-1"><i class="fa-solid fa-filter text-sky-600 mr-1"></i>Lọc điểm tuần:</span>
+        <button type="button" onclick="setDisciplineScoreFilter('ALL')" class="${btnCls('ALL')}">Tất cả (${scoped.students.length})</button>
+        <button type="button" onclick="setDisciplineScoreFilter('PLUS')" class="${btnCls('PLUS')}">🟢 Được cộng điểm (${plusStudents.length})</button>
+        <button type="button" onclick="setDisciplineScoreFilter('MINUS')" class="${btnCls('MINUS')}">🔴 Bị trừ điểm (${minusStudents.length})</button>
+      </div>
+      <span class="text-[10.5px] text-slate-500 italic"><i class="fa-solid fa-hand-pointer text-sky-600 mr-1"></i>Bấm vào số điểm (VD: 110đ) trên thẻ HS để xem chi tiết cộng/trừ</span>
+    `;
+  }
+
+  // 2. Gắn sự kiện click xem chi tiết vào từng thẻ học sinh & lọc hiển thị
+  const candidateCards = tabThiDua.querySelectorAll("[data-student-id], .student-att-card, .rounded-2xl");
+  candidateCards.forEach(card => {
+    let stId = card.getAttribute("data-student-id");
+    if (!stId) {
+      const idMatch = (card.innerText || "").match(/\bHS\d{2}\b/);
+      if (idMatch && card.querySelector("button")) {
+        stId = idMatch[0];
+      }
+    }
+    if (!stId) return;
+
+    const st = scoped.students.find(s => s.id === stId);
+    if (!st) return;
+    const score = parseScore(st.diemThiDua, 100);
+
+    // Áp dụng lọc
+    if (disciplineScoreFilterMode === "PLUS" && score <= 100) {
+      card.classList.add("hidden");
+    } else if (disciplineScoreFilterMode === "MINUS" && score >= 100) {
+      card.classList.add("hidden");
+    } else {
+      card.classList.remove("hidden");
+    }
+
+    // Gắn click mở chi tiết lịch sử điểm
+    if (!card.dataset.auditBound) {
+      card.dataset.auditBound = "1";
+      card.style.cursor = "pointer";
+      card.title = "Bấm để xem chi tiết lịch sử cộng/trừ điểm tuần của học sinh";
+      card.addEventListener("click", (ev) => {
+        if (ev.target.closest("button, select, input, a")) return;
+        openStudentDisciplineDetailModal(stId);
+      });
+    }
+  });
+}
+
+
+// ==================== BỘ MÁY XÓA HỌC SINH CÓ GHI CHÚ LÝ DO & LƯU TRỮ BIẾN ĐỘNG ====================
+let pendingDeleteStudentTargetId = "";
+
+function ensureDeleteStudentReasonModal() {
+  if (document.getElementById("deleteStudentReasonModal")) return;
+  const modalHtml = `
+    <div id="deleteStudentReasonModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 hidden" onclick="if(event.target===this) closeDeleteStudentReasonModal()">
+      <div class="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <div class="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+              <i class="fa-solid fa-user-minus"></i>
+            </div>
+            <div>
+              <h3 class="font-black text-slate-900 text-sm sm:text-base">Xóa Học Sinh & Ghi Chú Biến Động</h3>
+              <p class="text-[11px] text-slate-500">Lưu vết lý do để báo cáo sĩ số & khôi phục khi cần</p>
+            </div>
+          </div>
+          <button onclick="closeDeleteStudentReasonModal()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form onsubmit="confirmDeleteStudentWithReason(event)" class="space-y-3 text-xs">
+          <div class="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950">
+            Học sinh cần xóa: <b id="delReasonStudentLabel" class="text-sm font-black">...</b>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1.5">Phân loại lý do xóa khỏi danh sách lớp:</label>
+            <div class="grid grid-cols-1 gap-1.5" id="delReasonCategoryGroup">
+              <label class="p-2.5 rounded-xl border border-slate-200 hover:bg-rose-50/40 flex items-center gap-2.5 cursor-pointer">
+                <input type="radio" name="delReasonCategory" value="NGHI_HOC" checked class="w-4 h-4 accent-rose-600">
+                <div>
+                  <b class="text-slate-900 block">🔴 Nghỉ học / Thôi học / Bảo lưu</b>
+                  <span class="text-[10.5px] text-slate-500">Học sinh nghỉ học giữa chừng (giữ lại hồ sơ để thống kê sĩ số)</span>
+                </div>
+              </label>
+              <label class="p-2.5 rounded-xl border border-slate-200 hover:bg-amber-50/40 flex items-center gap-2.5 cursor-pointer">
+                <input type="radio" name="delReasonCategory" value="CHUYEN_TRUONG" class="w-4 h-4 accent-amber-600">
+                <div>
+                  <b class="text-slate-900 block">🟡 Chuyển trường / Chuyển lớp</b>
+                  <span class="text-[10.5px] text-slate-500">Học sinh chuyển sang lớp khác hoặc trường khác</span>
+                </div>
+              </label>
+              <label class="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer">
+                <input type="radio" name="delReasonCategory" value="NHAP_NHAM" class="w-4 h-4 accent-slate-600">
+                <div>
+                  <b class="text-slate-900 block">⚪ Nhập nhầm / Trùng danh sách</b>
+                  <span class="text-[10.5px] text-slate-500">Thao tác nhầm hoặc dư dòng khi nhập Excel</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Ghi chú chi tiết (nơi chuyển đến, ngày nghỉ, lý do cụ thể):</label>
+            <textarea id="delReasonNoteInput" rows="2" required placeholder="Ví dụ: Nghỉ học theo đơn gia đình từ 12/11/2026; hoặc Chuyển sang lớp 10A5..."
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-slate-800 focus:outline-none focus:border-rose-500"></textarea>
+          </div>
+
+          <div class="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+            <button type="button" onclick="closeDeleteStudentReasonModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold">
+              Hủy bỏ
+            </button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black shadow-md flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-trash-can"></i> Xác Nhận Xóa & Lưu Ghi Chú
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+}
+
+function resolveTargetStudentIdForDelete(explicitId) {
+  if (explicitId) return explicitId;
+  if (appState.selectedStudentForDetail && appState.selectedStudentForDetail.id) {
+    return appState.selectedStudentForDetail.id;
+  }
+  const hiddenIdEl = document.getElementById("editStudentIdInput") || document.getElementById("detailStudentIdInput");
+  if (hiddenIdEl && hiddenIdEl.value) return hiddenIdEl.value.trim();
+  const modalTitle = document.getElementById("studentDetailModalTitle") || document.getElementById("detailStudentName");
+  if (modalTitle) {
+    const m = (modalTitle.innerText || "").match(/\bHS\d+\b/);
+    if (m) return m[0];
+  }
+  return "";
+}
+
+function openDeleteStudentReasonModal(studentId) {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ Giáo viên chủ nhiệm mới có quyền xóa học sinh khỏi danh sách lớp!");
+    return;
+  }
+  const targetId = resolveTargetStudentIdForDelete(studentId);
+  const st = appState.students.find(s => s.id === targetId);
+  if (!st) {
+    alert("Không xác định được học sinh cần xóa. Vui lòng chọn lại học sinh!");
+    return;
+  }
+
+  pendingDeleteStudentTargetId = st.id;
+  ensureDeleteStudentReasonModal();
+  const labelEl = document.getElementById("delReasonStudentLabel");
+  if (labelEl) labelEl.innerText = `${st.hoTen} (${st.id} - ${st.to})`;
+  const noteEl = document.getElementById("delReasonNoteInput");
+  if (noteEl) noteEl.value = "";
+
+  document.getElementById("deleteStudentReasonModal").classList.remove("hidden");
+}
+
+function closeDeleteStudentReasonModal() {
+  const modal = document.getElementById("deleteStudentReasonModal");
+  if (modal) modal.classList.add("hidden");
+  pendingDeleteStudentTargetId = "";
+}
+
+async function confirmDeleteStudentWithReason(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (appState.roleLevel !== "GVCN") return;
+
+  const stId = pendingDeleteStudentTargetId;
+  const stIndex = appState.students.findIndex(s => s.id === stId);
+  if (stIndex === -1) {
+    closeDeleteStudentReasonModal();
+    return;
+  }
+
+  const st = appState.students[stIndex];
+  const catRadio = document.querySelector('input[name="delReasonCategory"]:checked');
+  const category = catRadio ? catRadio.value : "NGHI_HOC";
+  const noteInput = document.getElementById("delReasonNoteInput");
+  const note = noteInput ? noteInput.value.trim() : "";
+
+  const categoryLabels = {
+    "NGHI_HOC": "Nghỉ học / Thôi học",
+    "CHUYEN_TRUONG": "Chuyển trường / Chuyển lớp",
+    "NHAP_NHAM": "Nhập nhầm / Trùng hồ sơ"
+  };
+
+  const nowStr = new Date().toLocaleString("vi-VN");
+  const archiveEntry = {
+    archiveId: `DEL_${Date.now()}`,
+    deletedAt: nowStr,
+    deletedBy: appState.currentUser ? appState.currentUser.fullName : "GVCN",
+    reasonCategory: category,
+    reasonLabel: categoryLabels[category] || "Biến động sĩ số",
+    reasonNote: note,
+    remainingCount: Math.max(0, appState.students.length - 1),
+    studentData: JSON.parse(JSON.stringify(st))
+  };
+
+  if (!Array.isArray(appState.deletedStudents)) appState.deletedStudents = [];
+  appState.deletedStudents.unshift(archiveEntry);
+
+  // Xóa khỏi danh sách đang học
+  appState.students.splice(stIndex, 1);
+
+  // Tự động dọn ghế ngồi của học sinh này trên Sơ đồ lớp (nếu có)
+  const cleanDeletedName = removeVietnameseTones(st.hoTen);
+  if (Array.isArray(currentSeatingLayout)) {
+    currentSeatingLayout.forEach(row => {
+      if (Array.isArray(row)) {
+        row.forEach(seat => {
+          if (seat && removeVietnameseTones(seat.name) === cleanDeletedName) {
+            seat.name = "";
+            seat.role = "";
+          }
+        });
+      }
+    });
+  }
+
+  // Ghi nhận vào Nhật ký kiểm toán (Audit Log)
+  if (!Array.isArray(appState.auditLogs)) appState.auditLogs = [];
+  appState.auditLogs.unshift({
+    time: nowStr,
+    author: archiveEntry.deletedBy,
+    action: "XÓA HỌC SINH",
+    detail: `Xóa em ${st.hoTen} (${st.id} - ${st.to}) • Lý do: [${archiveEntry.reasonLabel}] ${note}`
+  });
+
+  saveStateToLocal();
+  closeDeleteStudentReasonModal();
+
+  // Đóng modal chi tiết học sinh nếu đang mở
+  const detailModal = document.getElementById("studentDetailModal");
+  if (detailModal) detailModal.classList.add("hidden");
+
+  renderAllSections();
+
+  // Đồng bộ lên Google Sheets
+  await callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+  await callApi("saveConfig", {
+    deletedStudentsJson: JSON.stringify(appState.deletedStudents)
+  }, "POST");
+
+  alert(`Đã xóa em ${st.hoTen} (${st.id}) khỏi danh sách lớp và lưu ghi chú: [${archiveEntry.reasonLabel}] - ${note}. Sĩ số hiện tại: ${appState.students.length} HS.`);
+}
+
+async function restoreDeletedStudent(archiveId) {
+  if (appState.roleLevel !== "GVCN") return;
+  const idx = (appState.deletedStudents || []).findIndex(x => x.archiveId === archiveId);
+  if (idx === -1) return;
+
+  const item = appState.deletedStudents[idx];
+  const st = item.studentData;
+  if (!st) return;
+
+  if (!confirm(`Khôi phục em ${st.hoTen} (${st.id} - ${st.to}) trở lại danh sách lớp đang học?`)) return;
+
+  if (appState.students.some(s => s.id === st.id)) {
+    st.id = `HS${String(appState.students.length + 1).padStart(2, "0")}`;
+  }
+
+  appState.students.push(st);
+  appState.deletedStudents.splice(idx, 1);
+
+  if (!Array.isArray(appState.auditLogs)) appState.auditLogs = [];
+  appState.auditLogs.unshift({
+    time: new Date().toLocaleString("vi-VN"),
+    author: appState.currentUser ? appState.currentUser.fullName : "GVCN",
+    action: "KHÔI PHỤC HS",
+    detail: `Khôi phục em ${st.hoTen} (${st.id}) trở lại danh sách lớp (trước đó: ${item.reasonLabel})`
+  });
+
+  saveStateToLocal();
+  renderAllSections();
+
+  await callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+  await callApi("saveConfig", {
+    deletedStudentsJson: JSON.stringify(appState.deletedStudents)
+  }, "POST");
+
+  alert(`Đã khôi phục em ${st.hoTen} trở lại danh sách lớp 10A12!`);
+}
+
+function renderDeletedStudentsArchiveSection() {
+  const tabDs = document.getElementById("tab-danh-sach");
+  if (!tabDs) return;
+
+  let archiveBox = document.getElementById("deletedStudentsArchiveContainer");
+  if (!archiveBox) {
+    archiveBox = document.createElement("div");
+    archiveBox.id = "deletedStudentsArchiveContainer";
+    archiveBox.className = "mt-5 p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3";
+    tabDs.appendChild(archiveBox);
+  }
+
+  const list = appState.deletedStudents || [];
+  if (list.length === 0) {
+    archiveBox.innerHTML = `
+      <div class="flex items-center justify-between text-xs text-slate-500">
+        <span class="font-black text-slate-700 uppercase flex items-center gap-1.5">
+          <i class="fa-solid fa-clock-rotate-left text-slate-400"></i> Sổ Theo Dõi Biến Động Sĩ Số (Đã xóa / Chuyển đi)
+        </span>
+        <span class="italic">Chưa có biến động giảm sĩ số nào</span>
+      </div>
+    `;
+    return;
+  }
+
+  const isGVCN = (appState.roleLevel === "GVCN");
+  const badgeMap = {
+    "NGHI_HOC": "bg-rose-50 text-rose-700 border-rose-200",
+    "CHUYEN_TRUONG": "bg-amber-50 text-amber-800 border-amber-200",
+    "NHAP_NHAM": "bg-slate-100 text-slate-700 border-slate-300"
+  };
+
+  archiveBox.innerHTML = `
+    <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 flex-wrap gap-2">
+      <div>
+        <h3 class="text-xs sm:text-sm font-black text-slate-800 uppercase flex items-center gap-1.5">
+          <i class="fa-solid fa-clock-rotate-left text-rose-600"></i>
+          Sổ Theo Dõi Biến Động Sĩ Số (${list.length} trường hợp đã xóa)
+        </h3>
+        <p class="text-[11px] text-slate-500">Lưu giữ đầy đủ lý do nghỉ học, chuyển trường hoặc nhập nhầm để báo cáo cuối kỳ</p>
+      </div>
+    </div>
+    <div class="space-y-2 max-h-64 overflow-y-auto pr-1">
+      ${list.map(item => {
+        const st = item.studentData || {};
+        const badgeCls = badgeMap[item.reasonCategory] || badgeMap.NHAP_NHAM;
+        return `
+          <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <b class="text-slate-900">${escapeHtml(st.hoTen || "Học sinh")}</b>
+                <span class="font-mono text-[10.5px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600 font-bold">${escapeHtml(st.id || "")} • ${escapeHtml(st.to || "")}</span>
+                <span class="px-2 py-0.5 rounded-lg border font-black text-[10.5px] ${badgeCls}">${escapeHtml(item.reasonLabel)}</span>
+              </div>
+              <p class="text-[11px] text-slate-700"><b>Ghi chú:</b> ${escapeHtml(item.reasonNote || "Không có ghi chú")}</p>
+              <p class="text-[10px] text-slate-400">Thời điểm: ${escapeHtml(item.deletedAt)} • Người thực hiện: ${escapeHtml(item.deletedBy)} • Sĩ số sau biến động: <b>${item.remainingCount} HS</b></p>
+            </div>
+            ${isGVCN ? `
+              <button type="button" onclick="restoreDeletedStudent('${escapeAttr(item.archiveId)}')" class="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-600 text-emerald-700 hover:text-white border border-emerald-300 font-bold text-[11px] transition shrink-0 self-start sm:self-center">
+                <i class="fa-solid fa-rotate-left mr-1"></i> Khôi phục về lớp
+              </button>
+            ` : ""}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function bindDeleteStudentReasonInterceptor() {
+  // Tự động gắn sự kiện vào nút Xóa học sinh (#btnDeleteStudent) hoặc các nút xóa trên thẻ học sinh
+  const btnDel = document.getElementById("btnDeleteStudent");
+  if (btnDel && !btnDel.dataset.reasonBound) {
+    btnDel.dataset.reasonBound = "1";
+    btnDel.removeAttribute("onclick");
+    btnDel.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      openDeleteStudentReasonModal();
+    }, true);
+  }
+}
+
+
+// ==================== BỘ MÁY THIẾT ĐẶT NGÀY BẮT ĐẦU TUẦN 1 NĂM HỌC ====================
+
+// ==================== KHÓA TRƯỜNG CHỨC VỤ & ĐỒNG BỘ TỰ ĐỘNG TỪ MỤC BỔ NHIỆM ====================
+const CLASS_OFFICER_ROLES_SCHEMA = [
+  { key: "LOP_TRUONG", label: "Lớp trưởng", multi: false },
+  { key: "BI_THU", label: "Bí thư Chi đoàn", multi: false },
+  { key: "PHO_HT", label: "Lớp phó Học tập", multi: false },
+  { key: "PHO_LD", label: "Lớp phó Lao động", multi: false },
+  { key: "PHO_VTM", label: "Lớp phó VTM", multi: false },
+  { key: "THU_QUY", label: "Thủ quỹ lớp", multi: false },
+  { key: "TT_T1", label: "Tổ trưởng T1", multi: false, teamFilter: "Tổ 1" },
+  { key: "TT_T2", label: "Tổ trưởng T2", multi: false, teamFilter: "Tổ 2" },
+  { key: "TT_T3", label: "Tổ trưởng T3", multi: false, teamFilter: "Tổ 3" },
+  { key: "TT_T4", label: "Tổ trưởng T4", multi: false, teamFilter: "Tổ 4" },
+  { key: "CO_DO", label: "Cờ đỏ", multi: true },
+  { key: "THI_DUA", label: "Ban Thi đua", multi: true }
+];
+
+function lockStudentProfileRoleField() {
+  // Tìm ô nhập Chức vụ cán sự trong Modal hồ sơ học sinh và khóa chỉ đọc (readonly)
+  const candidateIds = ["editStudentRoleInput", "detailStudentRoleInput", "studentRoleInput", "modalStudentRole"];
+  candidateIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) applyReadonlyRoleStyle(el);
+  });
+
+  document.querySelectorAll("label").forEach(lbl => {
+    if ((lbl.innerText || "").includes("Chức vụ cán sự")) {
+      const container = lbl.parentElement;
+      if (!container) return;
+      const inp = container.querySelector("input, select");
+      if (inp) applyReadonlyRoleStyle(inp);
+    }
+  });
+}
+
+function applyReadonlyRoleStyle(el) {
+  if (!el) return;
+  if (el.tagName === "SELECT") {
+    el.disabled = true;
+  } else {
+    el.readOnly = true;
+  }
+  el.classList.add("bg-slate-100", "text-slate-600", "cursor-not-allowed", "select-none");
+  el.title = "Khóa chỉnh sửa tay • Tự động cập nhật từ mục Cài đặt & Bổ nhiệm";
+
+  const parent = el.parentElement;
+  if (parent && !parent.querySelector(".role-locked-hint")) {
+    const hint = document.createElement("span");
+    hint.className = "role-locked-hint block text-[10px] text-amber-700 font-bold mt-1";
+    hint.innerHTML = `<i class="fa-solid fa-lock mr-1"></i>Tự động cập nhật từ mục <b>Cài đặt & Bổ nhiệm</b>`;
+    parent.appendChild(hint);
+  }
+}
+
+function markRoleAppointmentsDirty() {
+  appState.isAppointmentsDirty = true;
+  const bar = document.getElementById("apptUnsavedDirtyNotice");
+  if (bar) bar.classList.remove("hidden");
+}
+
+function renderCentralizedRoleAppointmentCard(forceRebuild = false) {
+  const tabSettings = document.getElementById("tab-cai-dat");
+  if (!tabSettings) return;
+
+  // Nếu GVCN đang chọn dở chức vụ mà chưa bấm Lưu, không vẽ đè làm mất lựa chọn!
+  if (appState.isAppointmentsDirty && !forceRebuild && document.getElementById("centralizedRoleAppointmentCard")) {
+    return;
+  }
+
+  let card = document.getElementById("centralizedRoleAppointmentCard");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "centralizedRoleAppointmentCard";
+    card.className = "p-4 sm:p-5 rounded-3xl bg-white border-2 border-amber-200 shadow-xs space-y-4 mb-4";
+    tabSettings.insertBefore(card, tabSettings.firstChild);
+  }
+
+  const students = Array.isArray(appState.students) ? appState.students : [];
+  const isGVCN = appState.roleLevel === "GVCN";
+
+  const studentHasRole = (st, roleLabel) => {
+    const tokens = String(st.chucVu || "").split(/[,;/]+/).map(x => removeVietnameseTones(x));
+    return tokens.includes(removeVietnameseTones(roleLabel));
+  };
+
+  const buildSingleSelect = (roleMeta) => {
+    const pool = roleMeta.teamFilter
+      ? students.filter(s => s.to === roleMeta.teamFilter)
+      : students;
+    const currentHolder = students.find(s => studentHasRole(s, roleMeta.label));
+    const currentId = currentHolder ? currentHolder.id : "";
+    return `
+      <div>
+        <label class="block font-bold text-slate-700 mb-1">${escapeHtml(roleMeta.label)}:</label>
+        <select id="appt_select_${roleMeta.key}" onchange="markRoleAppointmentsDirty()" ${!isGVCN ? "disabled" : ""}
+          class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white font-bold text-slate-900 text-xs focus:outline-none focus:border-amber-500">
+          <option value="">-- Chưa bổ nhiệm --</option>
+          ${pool.map(s => `<option value="${escapeAttr(s.id)}" ${s.id === currentId ? "selected" : ""}>${escapeHtml(s.hoTen)} (${escapeHtml(s.to)})</option>`).join("")}
+        </select>
+      </div>
+    `;
+  };
+
+  const singleRoles = CLASS_OFFICER_ROLES_SCHEMA.filter(r => !r.multi);
+  const coDoHolders = students.filter(s => studentHasRole(s, "Cờ đỏ")).map(s => s.id);
+  const thiDuaHolders = students.filter(s => studentHasRole(s, "Ban Thi đua")).map(s => s.id);
+
+  card.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+      <div>
+        <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-crown text-amber-500"></i>
+          Bổ Nhiệm Ban Cán Sự Lớp (Hỗ Trợ Kiêm Nhiệm Nhiều Chức Vụ)
+        </h3>
+        <p class="text-[11px] text-slate-500">Một học sinh có thể kiêm nhiệm đồng thời 2 chức vụ (VD: Tổ trưởng + Cờ đỏ / Ban Thi đua). Hệ thống tự cộng dồn quyền hạn & huy hiệu</p>
+      </div>
+      ${isGVCN ? `
+        <button type="button" onclick="saveCentralizedRoleAppointments()" class="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-sm transition flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+          <i class="fa-solid fa-floppy-disk"></i> Lưu & Cập Nhật Chức Vụ
+        </button>
+      ` : ""}
+    </div>
+
+    <div id="apptUnsavedDirtyNotice" class="${appState.isAppointmentsDirty ? '' : 'hidden'} p-2.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 text-xs font-bold flex items-center justify-between gap-2">
+      <span><i class="fa-solid fa-circle-exclamation text-rose-600 mr-1.5"></i>Bạn vừa thay đổi danh sách bổ nhiệm nhưng chưa bấm Lưu!</span>
+      <button type="button" onclick="saveCentralizedRoleAppointments()" class="px-3 py-1 rounded-lg bg-rose-600 text-white font-black text-[11px]">Lưu ngay</button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+      ${singleRoles.map(r => buildSingleSelect(r)).join("")}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 text-xs">
+      <div>
+        <label class="block font-bold text-slate-700 mb-1">Đội Cờ đỏ (có thể kiêm nhiệm chức vụ khác):</label>
+        <div class="max-h-36 overflow-y-auto p-2 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 gap-1">
+          ${students.map(s => `
+            <label class="flex items-center gap-1.5 text-[11px] p-1 rounded hover:bg-white cursor-pointer">
+              <input type="checkbox" value="${escapeAttr(s.id)}" onchange="markRoleAppointmentsDirty()" ${coDoHolders.includes(s.id) ? "checked" : ""} ${!isGVCN ? "disabled" : ""} class="appt-codo-cb accent-amber-600">
+              <span class="truncate font-medium text-slate-800">${escapeHtml(s.hoTen)}</span>
+            </label>
+          `).join("")}
+        </div>
+      </div>
+
+      <div>
+        <label class="block font-bold text-slate-700 mb-1">Ban Thi đua (có thể kiêm nhiệm chức vụ khác):</label>
+        <div class="max-h-36 overflow-y-auto p-2 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 gap-1">
+          ${students.map(s => `
+            <label class="flex items-center gap-1.5 text-[11px] p-1 rounded hover:bg-white cursor-pointer">
+              <input type="checkbox" value="${escapeAttr(s.id)}" onchange="markRoleAppointmentsDirty()" ${thiDuaHolders.includes(s.id) ? "checked" : ""} ${!isGVCN ? "disabled" : ""} class="appt-thidua-cb accent-sky-600">
+              <span class="truncate font-medium text-slate-800">${escapeHtml(s.hoTen)}</span>
+            </label>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function saveCentralizedRoleAppointments() {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ GVCN mới có quyền bổ nhiệm Ban cán sự lớp!");
+    return;
+  }
+
+  const rolesListByStudentId = {};
+  const addRole = (stId, label) => {
+    if (!stId || !label) return;
+    if (!rolesListByStudentId[stId]) rolesListByStudentId[stId] = [];
+    if (!rolesListByStudentId[stId].includes(label)) {
+      rolesListByStudentId[stId].push(label);
+    }
+  };
+
+  const singleRoles = CLASS_OFFICER_ROLES_SCHEMA.filter(r => !r.multi);
+  singleRoles.forEach(r => {
+    const sel = document.getElementById(`appt_select_${r.key}`);
+    const stId = sel ? String(sel.value || "").trim() : "";
+    if (stId) addRole(stId, r.label);
+  });
+
+  document.querySelectorAll(".appt-codo-cb:checked").forEach(cb => {
+    addRole(String(cb.value || "").trim(), "Cờ đỏ");
+  });
+
+  document.querySelectorAll(".appt-thidua-cb:checked").forEach(cb => {
+    addRole(String(cb.value || "").trim(), "Ban Thi đua");
+  });
+
+  const serializedMap = {};
+  appState.students.forEach(st => {
+    const list = rolesListByStudentId[st.id] || [];
+    st.chucVu = list.length > 0 ? list.join(", ") : "Tổ viên";
+    if (list.length > 0) serializedMap[st.id] = st.chucVu;
+  });
+
+  appState.isAppointmentsDirty = false;
+  currentSeatingLayout = sanitizeSeatingLayoutWithRoster(currentSeatingLayout);
+
+  saveStateToLocal();
+  applyRolePermissions(false);
+  renderCentralizedRoleAppointmentCard(true);
+  renderAllSections();
+
+  await callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+  await callApi("saveConfig", {
+    roleAppointmentsJson: JSON.stringify(serializedMap),
+    seatingLayoutJson: JSON.stringify(currentSeatingLayout)
+  }, "POST");
+
+  alert("✅ Đã lưu Bổ nhiệm Ban cán sự (bao gồm các em kiêm nhiệm 2 chức vụ) và đồng bộ toàn hệ thống!");
+}
+
+// ==================== BẢNG QUẢN LÝ TÀI KHOẢN & MẬT KHẨU TOÀN LỚP (GVCN + 44 HỌC SINH) ====================
+let accountManagerRevealAll = false;
+let accountManagerSearchQuery = "";
+
+function toggleRevealAllAccountPasswords() {
+  accountManagerRevealAll = !accountManagerRevealAll;
+  renderAllAccountsPasswordManagerCard();
+}
+
+function filterAccountManagerRows(q) {
+  accountManagerSearchQuery = String(q || "");
+  renderAllAccountsPasswordManagerCard();
+}
+
+async function resetSingleStudentPasswordToDefault(studentId) {
+  if (appState.roleLevel !== "GVCN") return;
+  const st = (appState.students || []).find(s => s.id === studentId);
+  if (!st) return;
+  if (!confirm(`Đặt lại mật khẩu của em ${st.hoTen} (${st.id}) về mặc định "123456"?`)) return;
+
+  st.matKhau = "123456";
+  const overrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+  overrides[st.id] = "123456";
+  localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(overrides));
+  saveStateToLocal();
+  renderAllAccountsPasswordManagerCard();
+
+  await callApi("changeStudentPassword", { studentId: st.id, newPassword: "123456" }, "POST");
+  alert(`Đã đặt lại mật khẩu của em ${st.hoTen} về "123456"!`);
+}
+
+async function setCustomPasswordForStudentByGvcn(studentId) {
+  if (appState.roleLevel !== "GVCN") return;
+  const st = (appState.students || []).find(s => s.id === studentId);
+  if (!st) return;
+  const nextPass = prompt(`Nhập mật khẩu mới cho em ${st.hoTen} (${st.taiKhoan || st.id}):`, st.matKhau || "123456");
+  if (!nextPass || nextPass.trim().length < 4) {
+    if (nextPass !== null) alert("Mật khẩu phải có ít nhất 4 ký tự!");
+    return;
+  }
+  const cleanP = nextPass.trim();
+  st.matKhau = cleanP;
+  const overrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+  overrides[st.id] = cleanP;
+  localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(overrides));
+  saveStateToLocal();
+  renderAllAccountsPasswordManagerCard();
+
+  await callApi("changeStudentPassword", { studentId: st.id, newPassword: cleanP }, "POST");
+  alert(`Đã cập nhật mật khẩu mới cho em ${st.hoTen}!`);
+}
+
+async function resetGvcnPasswordToDefault() {
+  if (appState.roleLevel !== "GVCN") return;
+  if (!confirm("Đặt lại mật khẩu quản trị GVCN về mặc định '123456'?")) return;
+  await handleUnifiedPasswordUpdate("123456", "123456");
+  renderAllAccountsPasswordManagerCard();
+}
+
+function renderAllAccountsPasswordManagerCard() {
+  const tabSettings = document.getElementById("tab-cai-dat");
+  if (!tabSettings || appState.roleLevel !== "GVCN") return;
+
+  let card = document.getElementById("allAccountsPasswordManagerCard");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "allAccountsPasswordManagerCard";
+    card.className = "p-4 sm:p-5 rounded-3xl bg-white border-2 border-slate-200 shadow-xs space-y-4 mb-4";
+    tabSettings.appendChild(card);
+  }
+
+  const gvcnPass = localStorage.getItem("10A12_GVCN_PASSWORD") || "123456";
+  const qClean = removeVietnameseTones(accountManagerSearchQuery);
+  const students = (appState.students || []).filter(s => {
+    if (!qClean) return true;
+    return removeVietnameseTones(s.hoTen).includes(qClean) ||
+           removeVietnameseTones(s.id).includes(qClean) ||
+           removeVietnameseTones(s.taiKhoan).includes(qClean);
+  });
+
+  card.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+      <div>
+        <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-users-gear text-sky-700"></i>
+          Quản Lý Tài Khoản & Mật Khẩu Hệ Thống (GVCN & Toàn Lớp)
+        </h3>
+        <p class="text-[11px] text-slate-500">Xem lại mật khẩu hiện hành hoặc đặt lại (Reset) nhanh mật khẩu cho GVCN và từng học sinh</p>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" onclick="toggleRevealAllAccountPasswords()" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5">
+          <i class="fa-solid ${accountManagerRevealAll ? 'fa-eye-slash' : 'fa-eye'}"></i>
+          <span>${accountManagerRevealAll ? 'Ẩn mật khẩu' : 'Hiện tất cả mật khẩu'}</span>
+        </button>
+        <button type="button" onclick="callApi('organizeSheets', {}, 'POST').then(() => alert('Đã sắp xếp gọn 8 sheet & ẩn sheet Sessions trên Google Sheets!'))"
+          class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5" title="Dọn dẹp sheet thừa và sắp xếp lại thứ tự sheet">
+          <i class="fa-solid fa-table-columns"></i>
+          <span>Sắp xếp Google Sheets</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- TÀI KHOẢN GVCN -->
+    <div class="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+      <div class="space-y-0.5">
+        <span class="px-2 py-0.5 rounded bg-amber-600 text-white font-black text-[10px] uppercase">Tài khoản Quản trị GVCN</span>
+        <p class="text-slate-900 font-bold mt-1">
+          Tên đăng nhập: <code class="px-2 py-0.5 rounded bg-white border border-amber-300 font-mono text-amber-950">gvcn</code>
+          &nbsp;•&nbsp; Mật khẩu hiện tại: <code class="px-2 py-0.5 rounded bg-white border border-amber-300 font-mono font-black text-rose-700">${accountManagerRevealAll ? escapeHtml(gvcnPass) : '••••••••'}</code>
+        </p>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button type="button" onclick="document.getElementById('gvcnNewPassInput1')?.focus()" class="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px]">
+          <i class="fa-solid fa-pen mr-1"></i>Đổi mật khẩu
+        </button>
+        <button type="button" onclick="resetGvcnPasswordToDefault()" class="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px]">
+          Reset 123456
+        </button>
+      </div>
+    </div>
+
+    <!-- TÌM KIẾM TÀI KHOẢN HỌC SINH -->
+    <div class="flex items-center gap-2 text-xs">
+      <input type="text" value="${escapeAttr(accountManagerSearchQuery)}" oninput="filterAccountManagerRows(this.value)"
+        placeholder="Tìm nhanh học sinh theo tên, mã HS hoặc tên đăng nhập..."
+        class="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:border-sky-600">
+    </div>
+
+    <!-- BẢNG TÀI KHOẢN 44 HỌC SINH -->
+    <div class="overflow-x-auto rounded-2xl border border-slate-200 max-h-96">
+      <table class="w-full border-collapse min-w-[680px] text-xs">
+        <thead class="sticky top-0 z-10">
+          <tr class="bg-slate-900 text-white text-[10.5px] uppercase">
+            <th class="py-2 px-2.5 text-center w-14">Mã</th>
+            <th class="py-2 px-3 text-left">Họ và tên</th>
+            <th class="py-2 px-2.5 text-left">Chức vụ</th>
+            <th class="py-2 px-3 text-left">Tên đăng nhập</th>
+            <th class="py-2 px-2.5 text-center">Mật khẩu</th>
+            <th class="py-2 px-3 text-right">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          ${students.map((s, idx) => {
+            const acc = s.taiKhoan || `${removeVietnameseTones(s.hoTen)}.k58qt`;
+            const pass = s.matKhau || "123456";
+            return `
+              <tr class="${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'} hover:bg-sky-50/40">
+                <td class="py-2 px-2.5 text-center font-mono font-bold text-slate-500">${escapeHtml(s.id)}</td>
+                <td class="py-2 px-3 font-bold text-slate-900">${escapeHtml(s.hoTen)} <span class="text-[10px] text-slate-400">(${escapeHtml(s.to)})</span></td>
+                <td class="py-2 px-2.5 text-[11px] font-bold text-indigo-800">${escapeHtml(s.chucVu || "Tổ viên")}</td>
+                <td class="py-2 px-3 font-mono text-[11px] text-sky-900">${escapeHtml(acc)}</td>
+                <td class="py-2 px-2.5 text-center font-mono font-black ${pass !== '123456' ? 'text-rose-700' : 'text-slate-600'}">
+                  ${accountManagerRevealAll ? escapeHtml(pass) : '••••••'}
+                </td>
+                <td class="py-2 px-3 text-right space-x-1 whitespace-nowrap">
+                  <button type="button" onclick="setCustomPasswordForStudentByGvcn('${escapeAttr(s.id)}')" class="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-600 text-sky-800 hover:text-white border border-sky-200 font-bold text-[10.5px] transition">
+                    Đặt MK
+                  </button>
+                  <button type="button" onclick="resetSingleStudentPasswordToDefault('${escapeAttr(s.id)}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-600 text-slate-700 hover:text-white border border-slate-200 font-bold text-[10.5px] transition">
+                    Reset
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ==================== BỔ SUNG TRƯỜNG SỐ ĐIỆN THOẠI HỌC SINH (sdtHocSinh) ====================
+function injectStudentPhoneFieldInProfileModal() {
+  const modal = document.getElementById("studentDetailModal");
+  if (!modal) return;
+  const targetStudent = appState.selectedStudentForDetail;
+
+  // Tìm ô nhập SĐT Mẹ hoặc Địa chỉ để chèn thêm ô SĐT Học sinh ngay cạnh
+  let phoneWrap = document.getElementById("studentPersonalPhoneFieldWrap");
+  if (!phoneWrap) {
+    const addrInput = modal.querySelector("#editStudentAddressInput, #detailStudentAddressInput, input[placeholder*='Địa chỉ']");
+    const anchorParent = addrInput ? addrInput.parentElement : null;
+    if (anchorParent && anchorParent.parentElement) {
+      phoneWrap = document.createElement("div");
+      phoneWrap.id = "studentPersonalPhoneFieldWrap";
+      phoneWrap.className = "text-xs";
+      phoneWrap.innerHTML = `
+        <label class="block font-bold text-slate-700 mb-1"><i class="fa-solid fa-mobile-screen-button text-sky-600 mr-1"></i>SĐT Học sinh (cá nhân):</label>
+        <div class="flex items-center gap-1.5">
+          <input type="tel" id="editStudentPersonalPhoneInput" placeholder="Nhập SĐT cá nhân của học sinh..."
+            onchange="saveStudentPersonalPhoneChange(this.value)"
+            class="flex-1 px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+          <a id="btnCallStudentPersonalPhone" href="#" class="hidden px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold text-[11px]" title="Gọi học sinh">
+            <i class="fa-solid fa-phone"></i>
+          </a>
+        </div>
+      `;
+      anchorParent.parentElement.insertBefore(phoneWrap, anchorParent);
+    }
+  }
+
+  const inp = document.getElementById("editStudentPersonalPhoneInput");
+  const callBtn = document.getElementById("btnCallStudentPersonalPhone");
+  if (inp && targetStudent) {
+    inp.value = targetStudent.sdtHocSinh || "";
+    inp.readOnly = (appState.roleLevel !== "GVCN");
+    if (callBtn) {
+      if (targetStudent.sdtHocSinh) {
+        callBtn.href = `tel:${targetStudent.sdtHocSinh}`;
+        callBtn.classList.remove("hidden");
+      } else {
+        callBtn.classList.add("hidden");
+      }
+    }
+  }
+}
+
+async function saveStudentPersonalPhoneChange(newPhoneVal) {
+  if (appState.roleLevel !== "GVCN" || !appState.selectedStudentForDetail) return;
+  const st = appState.students.find(s => s.id === appState.selectedStudentForDetail.id);
+  if (!st) return;
+  st.sdtHocSinh = String(newPhoneVal || "").trim();
+  appState.selectedStudentForDetail.sdtHocSinh = st.sdtHocSinh;
+  saveStateToLocal();
+  injectStudentPhoneFieldInProfileModal();
+  await callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+}
+
+// ==================== CỐ ĐỊNH THANH MENU BÊN TRÁI (SIDEBAR STICKY) ====================
+function enforceStickyDesktopSidebar() {
+  const sideBtn = document.getElementById("btn-side-tab-tong-quan");
+  if (!sideBtn) return;
+  const sidebarEl = sideBtn.closest("aside, nav, div.w-64, div.w-72") || sideBtn.parentElement?.parentElement;
+  if (sidebarEl && !sidebarEl.dataset.stickyApplied) {
+    sidebarEl.dataset.stickyApplied = "1";
+    sidebarEl.classList.add("md:sticky", "md:top-0", "md:h-screen", "md:overflow-y-auto", "md:self-start");
+  }
+}
+function renderSchoolYearStartSettingCard() {
+  const tabSettings = document.getElementById("tab-cai-dat");
+  if (!tabSettings) return;
+
+  let card = document.getElementById("schoolYearStartSettingCard");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "schoolYearStartSettingCard";
+    card.className = "p-4 sm:p-5 rounded-3xl bg-white border-2 border-sky-200 shadow-xs space-y-3 mb-4";
+    tabSettings.insertBefore(card, tabSettings.firstChild);
+  }
+
+  const isoVal = getSchoolYearStartDateIso();
+  const monDate = getSchoolYearStartMonday();
+  const monVN = formatDateVN(monDate);
+  const curWeek = getAutoSchoolWeek();
+
+  card.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+      <div>
+        <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-calendar-week text-sky-700"></i>
+          Thiết Đặt Ngày Bắt Đầu Tuần 1 Của Năm Học
+        </h3>
+        <p class="text-[11px] text-slate-500">Tự động chuẩn hóa về ngày Thứ Hai của tuần khai giảng để tính chuẩn xác 35 tuần học</p>
+      </div>
+      <span class="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black self-start sm:self-auto">
+        Hôm nay đang là: Tuần ${curWeek}
+      </span>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end text-xs">
+      <div>
+        <label class="block font-bold text-slate-700 mb-1">Chọn ngày bắt đầu học Tuần 1:</label>
+        <input type="date" id="schoolYearStartDateInput" value="${escapeAttr(isoVal)}"
+          class="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-sky-600 font-bold text-slate-900 focus:outline-none">
+      </div>
+      <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+        <span class="text-[10px] font-bold uppercase text-slate-400 block">Mốc Thứ Hai Tuần 1 đã chuẩn hóa:</span>
+        <b class="text-sky-900 font-mono text-sm">${escapeHtml(monVN)}</b>
+      </div>
+      <div>
+        <button type="button" onclick="saveSchoolYearStartDateSetting()" class="w-full py-2.5 px-4 rounded-xl bg-sky-700 hover:bg-sky-800 text-white font-black shadow-sm transition flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-floppy-disk"></i> Lưu & Tính Lại 35 Tuần
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function saveSchoolYearStartDateSetting() {
+  if (appState.roleLevel !== "GVCN") {
+    alert("Chỉ GVCN mới có quyền thiết đặt mốc tuần học!");
+    return;
+  }
+  const inp = document.getElementById("schoolYearStartDateInput");
+  if (!inp || !inp.value) {
+    alert("Vui lòng chọn ngày bắt đầu năm học!");
+    return;
+  }
+
+  const mon = normalizeDateToMonday(inp.value);
+  const normIso = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, "0")}-${String(mon.getDate()).padStart(2, "0")}`;
+
+  localStorage.setItem("10A12_SCHOOL_START_DATE", normIso);
+  SCHOOL_YEAR_START_MONDAY = mon;
+
+  const newCurWeek = getAutoSchoolWeek();
+  appState.selectedWeek = newCurWeek;
+  appState.lastAutoRolloverWeek = newCurWeek;
+  localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(newCurWeek));
+
+  buildAutoWeekDropdown();
+  renderAllSections();
+
+  await callApi("saveConfig", { schoolYearStartDate: normIso }, "POST");
+  alert(`Đã cập nhật mốc Thứ Hai Tuần 1 là ngày ${formatDateVN(mon)}. Hệ thống đã tự động tính lại tuần hiện tại là Tuần ${newCurWeek}!`);
+}
+
+// ==================== BỘ MÁY TIẾP NHẬN & DUYỆT GIẤY XIN PHÉP PHỤ HUYNH ====================
+function buildFormalLeaveLetterHtml(req) {
+  const st = appState.students.find(s => s.id === req.studentId) || {};
+  const parentName = req.parentName || st.tenMe || st.tenBa || `Phụ huynh em ${req.studentName}`;
+  const phone = req.parentPhone || st.sdtMe || st.sdtBa || "Chưa cung cấp";
+  const leaveDateFormatted = (() => {
+    if (!req.leaveDate) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.leaveDate)) {
+      const p = req.leaveDate.split("-");
+      return `${p[2]}/${p[1]}/${p[0]}`;
+    }
+    return req.leaveDate;
+  })();
+
+  const createdDateParts = (() => {
+    const now = new Date();
+    return {
+      d: String(now.getDate()).padStart(2, "0"),
+      m: String(now.getMonth() + 1).padStart(2, "0"),
+      y: now.getFullYear()
+    };
+  })();
+
+  if (req.formalLetterHtml) {
+    return req.formalLetterHtml;
+  }
+
+  return `
+    <div style="font-family: 'Times New Roman', serif; line-height: 1.65; color: #0f172a;" class="p-4 sm:p-6 bg-white border border-slate-300 rounded-2xl space-y-3 text-sm">
+      <div class="text-center space-y-0.5">
+        <p class="font-bold uppercase tracking-wide text-xs sm:text-sm">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+        <p class="font-bold underline underline-offset-4 text-xs sm:text-sm">Độc lập - Tự do - Hạnh phúc</p>
+      </div>
+
+      <div class="text-center pt-2">
+        <h4 class="font-bold text-base sm:text-lg uppercase">ĐƠN XIN PHÉP NGHỈ HỌC</h4>
+      </div>
+
+      <div class="pl-2 sm:pl-6 space-y-1">
+        <p><b>Kính gửi:</b> - Ban Giám hiệu Trường THPT số 1 Quang Trung;</p>
+        <p class="pl-14">- Thầy Giáo viên chủ nhiệm lớp <b>10A12</b>;</p>
+        <p class="pl-14">- Quý Thầy/Cô giáo viên bộ môn lớp <b>10A12</b>.</p>
+      </div>
+
+      <div class="space-y-1.5 pt-1">
+        <p>Tôi tên là: <b>${escapeHtml(parentName)}</b> &nbsp;•&nbsp; Số điện thoại liên hệ: <b>${escapeHtml(phone)}</b></p>
+        <p>Là phụ huynh của em: <b>${escapeHtml(req.studentName)}</b> — Học sinh lớp <b>10A12</b> (${escapeHtml(req.team || st.to || "")}).</p>
+        <p>Nay tôi viết đơn này kính xin quý Thầy/Cô cho phép con tôi được nghỉ học:</p>
+        <p class="pl-4">- Thời gian nghỉ: <b>${escapeHtml(req.session || "Buổi Sáng")}</b>, ngày <b>${escapeHtml(leaveDateFormatted)}</b>.</p>
+        <p class="pl-4">- Lý do xin nghỉ: <b>${escapeHtml(req.reason || "Lý do gia đình / sức khỏe")}</b>.</p>
+        <p>Gia đình xin cam đoan quản lý con em trong thời gian nghỉ học và nhắc nhở cháu chép bài, hoàn thành đầy đủ bài tập của các môn học trong ngày nghỉ.</p>
+        <p>Kính mong Ban Giám hiệu, Thầy Giáo viên chủ nhiệm và quý Thầy/Cô giáo viên bộ môn xem xét, chấp thuận. Tôi xin chân thành cảm ơn!</p>
+      </div>
+
+      <div class="pt-3 flex justify-end">
+        <div class="text-center pr-2 sm:pr-6">
+          <p class="italic text-xs">Tây Sơn, ngày ${createdDateParts.d} tháng ${createdDateParts.m} năm ${createdDateParts.y}</p>
+          <p class="font-bold text-xs uppercase mt-0.5">Người làm đơn (Phụ huynh HS)</p>
+          <p class="italic text-[11px] text-emerald-700 mt-1">(Đã gửi & xác nhận qua Cổng tra cứu điện tử)</p>
+          <p class="font-bold mt-1">${escapeHtml(parentName)}</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function ensureLeaveLetterViewerModal() {
+  if (document.getElementById("gvcnLeaveLetterModal")) return;
+  const html = `
+    <div id="gvcnLeaveLetterModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 hidden" onclick="if(event.target===this) closeGvcnLeaveLetterModal()">
+      <div class="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[92vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <h3 class="font-black text-slate-900 text-sm sm:text-base flex items-center gap-2">
+            <i class="fa-solid fa-file-signature text-sky-700"></i>
+            Toàn Văn Giấy Xin Phép Nghỉ Học
+          </h3>
+          <button onclick="closeGvcnLeaveLetterModal()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div id="gvcnLeaveLetterContent" class="overflow-y-auto py-3 flex-1"></div>
+
+        <div id="gvcnLeaveLetterActions" class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap"></div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+
+function openGvcnLeaveLetterModal(leaveId) {
+  ensureLeaveLetterViewerModal();
+  const list = getMergedLeaveRequests();
+  const req = list.find(x => x.id === leaveId);
+  if (!req) return;
+
+  const contentEl = document.getElementById("gvcnLeaveLetterContent");
+  const actionsEl = document.getElementById("gvcnLeaveLetterActions");
+
+  if (contentEl) {
+    contentEl.innerHTML = buildFormalLeaveLetterHtml(req);
+  }
+  if (actionsEl) {
+    const isApproved = req.status === "DA_DUYET";
+    actionsEl.innerHTML = `
+      <div class="flex items-center gap-2 flex-wrap">
+        ${!isApproved ? `
+          <button type="button" onclick="approveParentLeaveRequest('${escapeAttr(req.id)}')" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm transition flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-check"></i> Duyệt Nghỉ Có Phép (0đ)
+          </button>
+        ` : `
+          <span class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-black text-xs">
+            <i class="fa-solid fa-check-double mr-1"></i> Đã duyệt nghỉ có phép
+          </span>
+        `}
+        <button type="button" onclick="printCurrentLeaveLetter()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition flex items-center gap-1.5">
+          <i class="fa-solid fa-print"></i> In giấy phép
+        </button>
+      </div>
+      <button type="button" onclick="closeGvcnLeaveLetterModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">
+        Đóng
+      </button>
+    `;
+  }
+
+  document.getElementById("gvcnLeaveLetterModal").classList.remove("hidden");
+}
+
+function closeGvcnLeaveLetterModal() {
+  const m = document.getElementById("gvcnLeaveLetterModal");
+  if (m) m.classList.add("hidden");
+}
+
+function printCurrentLeaveLetter() {
+  const content = document.getElementById("gvcnLeaveLetterContent");
+  if (!content) return;
+  const win = window.open("", "_blank");
+  if (!win) {
+    window.print();
+    return;
+  }
+  win.document.write(`<html><head><title>Đơn xin phép nghỉ học - 10A12</title></head><body style="padding:24px;">${content.innerHTML}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+function getMergedLeaveRequests() {
+  const fromState = Array.isArray(appState.leaveRequests) ? appState.leaveRequests : [];
+  const fromLocal = safeJsonParse(localStorage.getItem("10A12_LEAVE_REQUESTS"), []);
+  const fromLetters = (appState.letters || []).filter(l => {
+    const t = String(l.type || l.category || l.title || "").toLowerCase();
+    return t.includes("nghỉ phép") || t.includes("xin phép");
+  }).map(l => ({
+    id: l.id || `LET_${l.time}`,
+    time: l.time || "",
+    studentId: l.studentId || "",
+    studentName: l.studentName || l.sender || "Học sinh",
+    parentName: l.parentName || l.sender || "",
+    parentPhone: l.parentPhone || "",
+    leaveDate: l.leaveDate || "",
+    session: l.session || "Buổi học",
+    reason: l.reason || l.content || "",
+    status: l.status || "CHO_DUYET"
+  }));
+
+  const all = [...fromState];
+  [...fromLocal, ...fromLetters].forEach(item => {
+    if (item && item.id && !all.some(x => x.id === item.id)) {
+      all.push(item);
+    }
+  });
+  return all;
+}
+
+async function approveParentLeaveRequest(leaveId) {
+  if (appState.roleLevel !== "GVCN") return;
+  const list = getMergedLeaveRequests();
+  const req = list.find(x => x.id === leaveId);
+  if (!req) return;
+
+  req.status = "DA_DUYET";
+  req.approvedAt = new Date().toLocaleString("vi-VN");
+  appState.leaveRequests = list;
+  localStorage.setItem("10A12_LEAVE_REQUESTS", JSON.stringify(list));
+
+  // Tự động ghi nhận điểm danh "Vắng có phép (0đ)" vào nhật ký tuần để không bị trừ điểm
+  const st = appState.students.find(s => s.id === req.studentId);
+  const dateVN = (() => {
+    if (req.leaveDate && /^\d{4}-\d{2}-\d{2}$/.test(req.leaveDate)) {
+      const p = req.leaveDate.split("-");
+      return `${p[2]}/${p[1]}/${p[0]}`;
+    }
+    return formatDateVN();
+  })();
+
+  const incidentKey = `LEAVE_APPROVED_${req.id}`;
+  if (st && !appState.violations.some(v => v.incidentKey === incidentKey)) {
+    const targetWeek = req.leaveDate ? getWeekNumberFromDate(req.leaveDate) : appState.selectedWeek;
+    const displayTime = `${req.session || "Buổi Sáng"} (${dateVN})`;
+    appState.violations.unshift({
+      time: displayTime,
+      date: dateVN,
+      week: targetWeek,
+      studentId: st.id,
+      studentName: st.hoTen,
+      criteria: "Vắng học Có phép (0đ)",
+      points: 0,
+      note: `Giấy phép PH ${req.parentName || ""}: ${req.reason}`,
+      sender: "GVCN duyệt đơn",
+      incidentKey
+    });
+
+    await callApi("recordViolation", {
+      incidentKey,
+      week: targetWeek,
+      date: dateVN,
+      displayTime,
+      studentId: st.id,
+      studentName: st.hoTen,
+      criteria: "Vắng học Có phép (0đ)",
+      points: 0,
+      note: `Giấy phép PH ${req.parentName || ""}: ${req.reason}`,
+      sender: "GVCN duyệt đơn"
+    }, "POST");
+  }
+
+  saveStateToLocal();
+  closeGvcnLeaveLetterModal();
+  renderAllSections();
+  alert(`Đã duyệt Giấy xin phép của em ${req.studentName} (${req.session} - ${dateVN}) thành Vắng có phép (0đ)!`);
+}
+
+function renderParentLeaveRequestsInbox() {
+  const tabTamTu = document.getElementById("tab-tam-tu");
+  if (!tabTamTu) return;
+
+  let box = document.getElementById("parentLeaveRequestsInboxBox");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "parentLeaveRequestsInboxBox";
+    box.className = "p-4 sm:p-5 rounded-3xl bg-white border-2 border-sky-200 shadow-xs space-y-3 mb-5";
+    tabTamTu.insertBefore(box, tabTamTu.firstChild);
+  }
+
+  const list = getMergedLeaveRequests();
+  const pendingCount = list.filter(x => x.status !== "DA_DUYET").length;
+
+  box.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+      <div>
+        <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-file-medical text-sky-700"></i>
+          Hộp Thư Giấy Xin Phép Nghỉ Học Từ Phụ Huynh
+          ${pendingCount > 0 ? `<span class="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black">${pendingCount} đơn mới</span>` : ""}
+        </h3>
+        <p class="text-[11px] text-slate-500">Hệ thống tự động biên soạn thành Đơn xin phép hoàn chỉnh từ thông tin phụ huynh gửi lên</p>
+      </div>
+    </div>
+
+    ${list.length === 0 ? `
+      <p class="text-xs text-slate-400 italic py-3 text-center">Chưa có giấy xin phép nghỉ học nào từ phụ huynh.</p>
+    ` : `
+      <div class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+        ${list.map(req => {
+          const isApproved = req.status === "DA_DUYET";
+          return `
+            <div class="p-3.5 rounded-2xl ${isApproved ? "bg-slate-50 border-slate-200" : "bg-sky-50/50 border-sky-200"} border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="px-2 py-0.5 rounded-md font-black text-[10px] ${isApproved ? "bg-emerald-100 text-emerald-800" : "bg-amber-500 text-white"}">
+                    ${isApproved ? "✓ Đã duyệt có phép" : "⏳ Chờ duyệt"}
+                  </span>
+                  <b class="text-slate-900 text-sm">${escapeHtml(req.studentName)}</b>
+                  <span class="text-slate-500 font-bold">(${escapeHtml(req.studentId || "")} • ${escapeHtml(req.team || "")})</span>
+                </div>
+                <p class="text-slate-700">
+                  <b>Xin nghỉ:</b> ${escapeHtml(req.session)} • Ngày <b>${escapeHtml(req.leaveDate)}</b> &nbsp;|&nbsp; <b>PH:</b> ${escapeHtml(req.parentName || "Phụ huynh")} (${escapeHtml(req.parentPhone || "")})
+                </p>
+                <p class="text-slate-600 italic"><b>Lý do:</b> "${escapeHtml(req.reason)}"</p>
+              </div>
+
+              <div class="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                <button type="button" onclick="openGvcnLeaveLetterModal('${escapeAttr(req.id)}')" class="px-3 py-2 rounded-xl bg-white hover:bg-sky-700 text-sky-800 hover:text-white border border-sky-300 font-bold text-[11px] transition flex items-center gap-1">
+                  <i class="fa-solid fa-file-lines"></i> Xem Giấy Phép
+                </button>
+                ${!isApproved ? `
+                  <button type="button" onclick="approveParentLeaveRequest('${escapeAttr(req.id)}')" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] transition flex items-center gap-1">
+                    <i class="fa-solid fa-check"></i> Duyệt
+                  </button>
+                ` : ""}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `}
+  `;
+}
+
+
+// ==================== BỘ MÁY LẬP & LƯU TRỮ BIÊN BẢN VI PHẠM ĐẶC BIỆT (TÀI LIỆU, ĐÁNH NHAU...) ====================
+const SPECIAL_VIOLATION_TYPES = [
+  {
+    code: "TAI_LIEU",
+    label: "Mang / sử dụng tài liệu, gian lận trong kiểm tra, thi cử",
+    badge: "bg-amber-100 text-amber-900 border-amber-300",
+    defaultPenaltyPoints: -20,
+    defaultAction: "Lập biên bản tại chỗ, đình chỉ bài kiểm tra, thu giữ tang vật và thông báo cho Phụ huynh học sinh phối hợp giáo dục."
+  },
+  {
+    code: "DANH_NHAU",
+    label: "Đánh nhau, xô xát, gây mất đoàn kết / bạo lực học đường",
+    badge: "bg-rose-100 text-rose-900 border-rose-300",
+    defaultPenaltyPoints: -30,
+    defaultAction: "Yêu cầu viết bản tường trình, lập biên bản vi phạm, mời Phụ huynh học sinh đến trường làm việc và báo cáo Ban Giám hiệu / Đoàn trường xem xét kỷ luật."
+  },
+  {
+    code: "DIEN_THOAI",
+    label: "Sử dụng điện thoại / thiết bị thu phát trái phép trong giờ học",
+    badge: "bg-sky-100 text-sky-900 border-sky-300",
+    defaultPenaltyPoints: -20,
+    defaultAction: "Tạm giữ thiết bị bàn giao GVCN / Văn phòng Đoàn, mời Phụ huynh trực tiếp nhận lại và ký cam kết không tái phạm."
+  },
+  {
+    code: "VO_LE_PHEP",
+    label: "Vô lễ với Giáo viên / Cán bộ nhà trường / Chống đối người trực",
+    badge: "bg-purple-100 text-purple-900 border-purple-300",
+    defaultPenaltyPoints: -25,
+    defaultAction: "Yêu cầu học sinh xin lỗi công khai, viết bản kiểm điểm có chữ ký xác nhận của Phụ huynh và hạ bậc hạnh kiểm tuần."
+  },
+  {
+    code: "KHAC",
+    label: "Vi phạm nội quy đặc biệt khác (phá hoại tài sản, hút thuốc, bỏ tiết...)",
+    badge: "bg-slate-100 text-slate-800 border-slate-300",
+    defaultPenaltyPoints: -20,
+    defaultAction: "Lập biên bản ghi nhận hiện trạng, yêu cầu khắc phục hậu quả và thông báo về gia đình."
+  }
+];
+
+function getSpecialViolationTypeMeta(code) {
+  return SPECIAL_VIOLATION_TYPES.find(x => x.code === code) || SPECIAL_VIOLATION_TYPES[0];
+}
+
+function buildOfficialSpecialViolationReportHtml(rep) {
+  const typeMeta = getSpecialViolationTypeMeta(rep.typeCode);
+  const dtStr = rep.incidentDateTime || new Date().toLocaleString("vi-VN");
+  const now = new Date();
+  const d = String(now.getDate()).padStart(2, "0");
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const y = now.getFullYear();
+
+  const studentsList = Array.isArray(rep.students) && rep.students.length > 0
+    ? rep.students
+    : [{ id: rep.studentId || "", hoTen: rep.studentName || "Học sinh", to: rep.team || "" }];
+
+  return `
+    <div style="font-family: 'Times New Roman', serif; line-height: 1.65; color: #0f172a;" class="p-5 sm:p-7 bg-white border border-slate-300 rounded-2xl space-y-3 text-sm">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-center border-b border-slate-200 pb-3">
+        <div>
+          <p class="font-bold uppercase text-xs">SỞ GD&ĐT TỈNH GIA LAI</p>
+          <p class="font-bold uppercase text-xs">TRƯỜNG THPT SỐ 1 QUANG TRUNG</p>
+          <p class="font-bold text-xs mt-0.5">TẬP THỂ LỚP 10A12</p>
+        </div>
+        <div>
+          <p class="font-bold uppercase text-xs">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+          <p class="font-bold underline underline-offset-4 text-xs">Độc lập - Tự do - Hạnh phúc</p>
+          <p class="italic text-xs mt-1">Tây Sơn, ngày ${d} tháng ${m} năm ${y}</p>
+        </div>
+      </div>
+
+      <div class="text-center pt-1">
+        <h3 class="font-bold text-base sm:text-lg uppercase">BIÊN BẢN VI PHẠM NỘI QUY NHÀ TRƯỜNG</h3>
+        <p class="italic text-xs text-slate-600">(Số: ${escapeHtml(rep.reportCode || "BB-10A12")} • Tuần ${escapeHtml(rep.week || getAutoSchoolWeek())})</p>
+      </div>
+
+      <div class="space-y-1.5 pt-1">
+        <p>Hôm nay, vào lúc <b>${escapeHtml(dtStr)}</b>, tại <b>${escapeHtml(rep.location || "Phòng học lớp 10A12 - Trường THPT số 1 Quang Trung")}</b>.</p>
+        <p><b>1. Thành phần lập biên bản gồm có:</b></p>
+        <p class="pl-4">- Đại diện Giáo viên / Ban cán sự lớp: <b>${escapeHtml(rep.recorderName || "GVCN lớp 10A12")}</b> (${escapeHtml(rep.recorderRole || "Giáo viên chủ nhiệm")});</p>
+        <p class="pl-4">- Người chứng kiến: <b>${escapeHtml(rep.witnessName || "Ban cán sự lớp 10A12")}</b>.</p>
+
+        <p><b>2. Học sinh vi phạm:</b></p>
+        ${studentsList.map((st, idx) => `
+          <p class="pl-4">${studentsList.length > 1 ? `${idx + 1}. ` : "- "}Em: <b>${escapeHtml(st.hoTen)}</b> — Lớp: <b>10A12</b> (${escapeHtml(st.to || "")}).</p>
+        `).join("")}
+
+        <p><b>3. Nội dung & Diễn biến vụ việc vi phạm:</b></p>
+        <p class="pl-4">- Nhóm lỗi đặc biệt: <b>${escapeHtml(typeMeta.label)}</b>.</p>
+        <p class="pl-4">- Diễn biến cụ thể: ${escapeHtml(rep.description || "")}</p>
+        ${rep.evidence ? `<p class="pl-4">- Tang vật / Phương tiện tạm giữ (nếu có): <b>${escapeHtml(rep.evidence)}</b>.</p>` : ""}
+
+        <p><b>4. Ý kiến trình bày & Cam kết của học sinh vi phạm:</b></p>
+        <p class="pl-4 italic">"${escapeHtml(rep.studentStatement || "Em xin nhận khuyết điểm về hành vi vi phạm nội quy của mình và cam kết không tái phạm.")}"</p>
+
+        <p><b>5. Biện pháp xử lý & Hướng giáo dục phối hợp:</b></p>
+        <p class="pl-4">- ${escapeHtml(rep.resolution || typeMeta.defaultAction)}</p>
+        ${Number(rep.deductedPoints) !== 0 ? `<p class="pl-4">- Điểm thi đua Quy chế 01: Điều chỉnh <b>${Number(rep.deductedPoints)} điểm</b> trong Tuần ${escapeHtml(rep.week || getAutoSchoolWeek())}.</p>` : ""}
+
+        <p class="pt-1">Biên bản kết thúc cùng ngày, đã được đọc lại cho tất cả mọi người có tên trên cùng nghe, công nhận đúng sự thật và nhất trí ký tên dưới đây.</p>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 text-center text-xs">
+        <div>
+          <p class="font-bold uppercase">Học sinh vi phạm</p>
+          <p class="italic text-[10.5px] text-slate-500">(Ký, ghi rõ họ tên)</p>
+          <p class="font-bold mt-10">${escapeHtml(studentsList.map(s => s.hoTen).join(", "))}</p>
+        </div>
+        <div>
+          <p class="font-bold uppercase">Người làm chứng</p>
+          <p class="italic text-[10.5px] text-slate-500">(Ký, ghi rõ họ tên)</p>
+          <p class="font-bold mt-10">${escapeHtml(rep.witnessName || "Ban cán sự lớp")}</p>
+        </div>
+        <div>
+          <p class="font-bold uppercase">Người lập biên bản</p>
+          <p class="italic text-[10.5px] text-slate-500">(Ký, ghi rõ họ tên)</p>
+          <p class="font-bold mt-10">${escapeHtml(rep.recorderName || "GVCN 10A12")}</p>
+        </div>
+        <div>
+          <p class="font-bold uppercase">Xác nhận của PHHS</p>
+          <p class="italic text-[10.5px] text-slate-500">(Ký, ghi rõ họ tên)</p>
+          <p class="font-bold mt-10">............................</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function ensureSpecialViolationReportModal() {
+  if (document.getElementById("specialViolationReportModal")) return;
+  const html = `
+    <div id="specialViolationReportModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 hidden" onclick="if(event.target===this) closeSpecialViolationReportModal()">
+      <div class="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[93vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+              <i class="fa-solid fa-file-shield"></i>
+            </div>
+            <div>
+              <h3 class="font-black text-slate-900 text-sm sm:text-base">Lập Biên Bản Vi Phạm Nội Quy Đặc Biệt</h3>
+              <p class="text-[11px] text-slate-500">Dùng cho các vụ việc nghiêm trọng: sử dụng tài liệu thi, đánh nhau, vô lễ, điện thoại...</p>
+            </div>
+          </div>
+          <button onclick="closeSpecialViolationReportModal()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form onsubmit="submitSpecialViolationReport(event)" class="overflow-y-auto py-3.5 space-y-3 text-xs flex-1 pr-1">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">1. Phân loại vụ việc đặc biệt: <span class="text-rose-500">*</span></label>
+              <select id="spReportTypeSelect" onchange="onSpecialViolationTypeChange(this.value)" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-rose-500">
+                ${SPECIAL_VIOLATION_TYPES.map(t => `<option value="${escapeAttr(t.code)}">${escapeHtml(t.label)}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">2. Thời gian & Địa điểm xảy ra:</label>
+              <input type="text" id="spReportLocationInput" value="Phòng học lớp 10A12 - Trường THPT số 1 Quang Trung"
+                class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:border-rose-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">3. Chọn học sinh vi phạm (có thể chọn nhiều em nếu liên quan đánh nhau/nhóm): <span class="text-rose-500">*</span></label>
+            <div id="spReportStudentsCheckboxList" class="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-2.5 rounded-2xl bg-slate-50 border border-slate-200"></div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">4. Tang vật tạm giữ (nếu có):</label>
+              <input type="text" id="spReportEvidenceInput" placeholder="VD: 01 tài liệu giấy môn Toán; hoặc 01 điện thoại di động..."
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:border-rose-500">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">5. Người chứng kiến / Cán sự lập cùng:</label>
+              <input type="text" id="spReportWitnessInput" value="Lớp trưởng & Ban Thi đua lớp 10A12"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:border-rose-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">6. Diễn biến sự việc vi phạm cụ thể: <span class="text-rose-500">*</span></label>
+            <textarea id="spReportDescInput" rows="2" required placeholder="Ghi rõ tiết học, môn học, hành vi vi phạm cụ thể của học sinh..."
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:border-rose-500"></textarea>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">7. Lời trình bày / Nhận thức khuyết điểm của học sinh:</label>
+            <input type="text" id="spReportStatementInput" value="Em xin nhận khuyết điểm về hành vi vi phạm nội quy của mình và cam kết không tái phạm."
+              class="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:border-rose-500">
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">8. Biện pháp xử lý & Hướng giáo dục phối hợp gia đình:</label>
+            <textarea id="spReportResolutionInput" rows="2" required class="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:border-rose-500">${escapeHtml(SPECIAL_VIOLATION_TYPES[0].defaultAction)}</textarea>
+          </div>
+
+          <div class="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 flex-wrap">
+            <label class="flex items-center gap-2 font-bold text-amber-950 cursor-pointer">
+              <input type="checkbox" id="spReportSyncPenaltyCb" checked class="w-4 h-4 accent-rose-600">
+              <span>Tự động trừ điểm thi đua tuần theo Quy chế 01</span>
+            </label>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[11px] font-bold text-amber-900">Mức trừ:</span>
+              <input type="number" id="spReportPenaltyPointsInput" value="-20" max="0" min="-100" class="w-20 px-2 py-1 rounded-lg border border-amber-300 bg-white font-mono font-black text-rose-700 text-center">
+              <span class="text-[11px] font-bold text-amber-900">điểm</span>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+            <button type="button" onclick="closeSpecialViolationReportModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold">
+              Hủy bỏ
+            </button>
+            <button type="submit" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black shadow-md flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-file-circle-check"></i> Lưu & Xuất Biên Bản Vi Phạm
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+
+function onSpecialViolationTypeChange(code) {
+  const meta = getSpecialViolationTypeMeta(code);
+  const resEl = document.getElementById("spReportResolutionInput");
+  const ptsEl = document.getElementById("spReportPenaltyPointsInput");
+  if (resEl) resEl.value = meta.defaultAction;
+  if (ptsEl) ptsEl.value = meta.defaultPenaltyPoints;
+}
+
+function openSpecialViolationReportModal(preselectedStudentId = "") {
+  if (!appState.currentUser || appState.roleLevel === "STUDENT" || appState.roleLevel === "GUEST") {
+    alert("Chỉ GVCN và Ban cán sự lớp mới có quyền lập biên bản vi phạm!");
+    return;
+  }
+  ensureSpecialViolationReportModal();
+
+  const listBox = document.getElementById("spReportStudentsCheckboxList");
+  if (listBox) {
+    listBox.innerHTML = appState.students.map(s => `
+      <label class="p-1.5 rounded-xl bg-white border border-slate-200 hover:bg-rose-50/40 flex items-center gap-1.5 cursor-pointer text-[11px]">
+        <input type="checkbox" value="${escapeAttr(s.id)}" ${s.id === preselectedStudentId ? "checked" : ""} class="accent-rose-600 sp-report-st-cb">
+        <span class="font-bold text-slate-800 truncate">${escapeHtml(s.hoTen)}</span>
+        <span class="text-[9.5px] text-slate-400 shrink-0">(${escapeHtml(s.to)})</span>
+      </label>
+    `).join("");
+  }
+
+  document.getElementById("specialViolationReportModal").classList.remove("hidden");
+}
+
+function closeSpecialViolationReportModal() {
+  const m = document.getElementById("specialViolationReportModal");
+  if (m) m.classList.add("hidden");
+}
+
+async function submitSpecialViolationReport(e) {
+  if (e && e.preventDefault) e.preventDefault();
+
+  const selectedIds = Array.from(document.querySelectorAll(".sp-report-st-cb:checked")).map(cb => cb.value);
+  if (selectedIds.length === 0) {
+    alert("Vui lòng chọn ít nhất 01 học sinh vi phạm!");
+    return;
+  }
+
+  const typeCode = document.getElementById("spReportTypeSelect").value;
+  const typeMeta = getSpecialViolationTypeMeta(typeCode);
+  const location = document.getElementById("spReportLocationInput").value.trim();
+  const evidence = document.getElementById("spReportEvidenceInput").value.trim();
+  const witnessName = document.getElementById("spReportWitnessInput").value.trim();
+  const description = document.getElementById("spReportDescInput").value.trim();
+  const studentStatement = document.getElementById("spReportStatementInput").value.trim();
+  const resolution = document.getElementById("spReportResolutionInput").value.trim();
+  const syncPenalty = document.getElementById("spReportSyncPenaltyCb").checked;
+  const penaltyPts = syncPenalty ? (parseInt(document.getElementById("spReportPenaltyPointsInput").value, 10) || -20) : 0;
+
+  const selectedStudents = selectedIds.map(id => {
+    const s = appState.students.find(x => x.id === id);
+    return s ? { id: s.id, hoTen: s.hoTen, to: s.to } : { id, hoTen: id, to: "" };
+  });
+
+  const now = new Date();
+  const dateVN = formatDateVN(now);
+  const timeVN = now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  const reportId = `BB_${Date.now()}`;
+  const reportCode = `BB-${String((appState.specialViolationReports || []).length + 1).padStart(2, "0")}/10A12`;
+
+  const reportObj = {
+    id: reportId,
+    reportCode,
+    week: appState.selectedWeek,
+    createdAt: `${timeVN} ngày ${dateVN}`,
+    incidentDateTime: `${timeVN} ngày ${dateVN}`,
+    typeCode,
+    typeLabel: typeMeta.label,
+    location,
+    students: selectedStudents,
+    studentId: selectedStudents.map(s => s.id).join(", "),
+    studentName: selectedStudents.map(s => s.hoTen).join(", "),
+    team: selectedStudents.map(s => s.to).join(", "),
+    evidence,
+    witnessName,
+    description,
+    studentStatement,
+    resolution,
+    deductedPoints: penaltyPts,
+    recorderName: appState.currentUser ? appState.currentUser.fullName : "GVCN lớp 10A12",
+    recorderRole: appState.currentUser ? appState.currentUser.role : "Giáo viên chủ nhiệm",
+    parentSigned: false
+  };
+
+  if (!Array.isArray(appState.specialViolationReports)) appState.specialViolationReports = [];
+  appState.specialViolationReports.unshift(reportObj);
+
+  // Đồng bộ trừ điểm thi đua tuần nếu được chọn
+  if (syncPenalty && penaltyPts !== 0) {
+    for (const stInfo of selectedStudents) {
+      const st = appState.students.find(s => s.id === stInfo.id);
+      if (st) {
+        st.diemThiDua = Math.max(0, parseScore(st.diemThiDua, 100) + penaltyPts);
+      }
+      const incidentKey = `${reportId}_${stInfo.id}`;
+      const criteriaText = `[Biên bản ${reportCode}] ${typeMeta.label}`;
+      appState.violations.unshift({
+        time: `Biên bản (${dateVN})`,
+        date: dateVN,
+        week: appState.selectedWeek,
+        studentId: stInfo.id,
+        studentName: stInfo.hoTen,
+        criteria: criteriaText,
+        points: penaltyPts,
+        note: description,
+        sender: reportObj.recorderName,
+        incidentKey
+      });
+
+      await callApi("recordViolation", {
+        incidentKey,
+        week: appState.selectedWeek,
+        date: dateVN,
+        displayTime: `Biên bản (${dateVN})`,
+        studentId: stInfo.id,
+        studentName: stInfo.hoTen,
+        criteria: criteriaText,
+        points: penaltyPts,
+        note: description,
+        sender: reportObj.recorderName
+      }, "POST");
+    }
+  }
+
+  saveStateToLocal();
+  closeSpecialViolationReportModal();
+  renderAllSections();
+
+  await callApi("saveConfig", {
+    specialViolationReportsJson: JSON.stringify(appState.specialViolationReports)
+  }, "POST");
+
+  openSpecialViolationViewerModal(reportId);
+}
+
+function ensureSpecialViolationViewerModal() {
+  if (document.getElementById("specialViolationViewerModal")) return;
+  const html = `
+    <div id="specialViolationViewerModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 hidden" onclick="if(event.target===this) closeSpecialViolationViewerModal()">
+      <div class="bg-white rounded-3xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 flex flex-col max-h-[93vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <h3 class="font-black text-slate-900 text-sm sm:text-base flex items-center gap-2">
+            <i class="fa-solid fa-file-contract text-rose-600"></i>
+            Toàn Văn Biên Bản Vi Phạm Nội Quy
+          </h3>
+          <button onclick="closeSpecialViolationViewerModal()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div id="spViolationViewerBody" class="overflow-y-auto py-3 flex-1"></div>
+
+        <div id="spViolationViewerFooter" class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap"></div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML("beforeend", html);
+}
+
+let activeViewingSpecialReportId = "";
+
+function openSpecialViolationViewerModal(reportId) {
+  ensureSpecialViolationViewerModal();
+  const rep = (appState.specialViolationReports || []).find(x => x.id === reportId);
+  if (!rep) return;
+  activeViewingSpecialReportId = reportId;
+
+  const bodyEl = document.getElementById("spViolationViewerBody");
+  const footerEl = document.getElementById("spViolationViewerFooter");
+
+  if (bodyEl) bodyEl.innerHTML = buildOfficialSpecialViolationReportHtml(rep);
+  if (footerEl) {
+    footerEl.innerHTML = `
+      <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" onclick="printSpecialViolationReport()" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-print"></i> In Biên Bản
+        </button>
+        <button type="button" onclick="exportSpecialViolationReportWord('${escapeAttr(rep.id)}')" class="px-4 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-file-word"></i> Tải File Word (.doc)
+        </button>
+      </div>
+      <button type="button" onclick="closeSpecialViolationViewerModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs">
+        Đóng
+      </button>
+    `;
+  }
+
+  document.getElementById("specialViolationViewerModal").classList.remove("hidden");
+}
+
+function closeSpecialViolationViewerModal() {
+  const m = document.getElementById("specialViolationViewerModal");
+  if (m) m.classList.add("hidden");
+}
+
+function printSpecialViolationReport() {
+  const content = document.getElementById("spViolationViewerBody");
+  if (!content) return;
+  const win = window.open("", "_blank");
+  if (!win) {
+    window.print();
+    return;
+  }
+  win.document.write(`<html><head><title>Biên bản vi phạm nội quy - Lớp 10A12</title></head><body style="padding:28px;">${content.innerHTML}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+function exportSpecialViolationReportWord(reportId) {
+  const rep = (appState.specialViolationReports || []).find(x => x.id === reportId);
+  if (!rep) return;
+  const htmlContent = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'><title>${escapeHtml(rep.reportCode)}</title></head>
+    <body style="font-family:'Times New Roman',serif; font-size:13pt;">
+      ${buildOfficialSpecialViolationReportHtml(rep)}
+    </body>
+    </html>
+  `;
+  const blob = new Blob(["\ufeff", htmlContent], { type: "application/msword" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Bien_Ban_Vi_Pham_${rep.reportCode.replace(/[^a-zA-Z0-9_-]/g, "_")}.doc`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function toggleSpecialReportParentSigned(reportId) {
+  if (appState.roleLevel !== "GVCN") return;
+  const rep = (appState.specialViolationReports || []).find(x => x.id === reportId);
+  if (!rep) return;
+  rep.parentSigned = !rep.parentSigned;
+  saveStateToLocal();
+  renderSpecialViolationReportsSection();
+  renderYearEndConductGradingPanel();
+  renderProfileCorrectionsInbox();
+  renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
+  renderAllAccountsPasswordManagerCard();
+  injectStudentPhoneFieldInProfileModal();
+  enforceStickyDesktopSidebar();
+  await callApi("saveConfig", {
+    specialViolationReportsJson: JSON.stringify(appState.specialViolationReports)
+  }, "POST");
+}
+
+async function deleteSpecialViolationReport(reportId) {
+  if (appState.roleLevel !== "GVCN") return;
+  if (!confirm("Thầy có chắc chắn muốn xóa biên bản vi phạm này?")) return;
+  appState.specialViolationReports = (appState.specialViolationReports || []).filter(x => x.id !== reportId);
+  saveStateToLocal();
+  renderSpecialViolationReportsSection();
+  renderYearEndConductGradingPanel();
+  renderProfileCorrectionsInbox();
+  renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
+  renderAllAccountsPasswordManagerCard();
+  injectStudentPhoneFieldInProfileModal();
+  enforceStickyDesktopSidebar();
+  await callApi("saveConfig", {
+    specialViolationReportsJson: JSON.stringify(appState.specialViolationReports)
+  }, "POST");
+}
+
+function renderSpecialViolationReportsSection() {
+  const targetTab = document.getElementById("tab-bien-ban") || document.getElementById("tab-thi-dua");
+  if (!targetTab) return;
+
+  let container = document.getElementById("specialViolationReportsContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "specialViolationReportsContainer";
+    container.className = "mt-5 p-4 sm:p-5 rounded-3xl bg-white border-2 border-rose-200 shadow-xs space-y-3";
+    targetTab.appendChild(container);
+  }
+
+  // Thêm nút lập biên bản nhanh trên thanh công cụ Tab Thi đua nếu chưa có
+  const filterBar = document.getElementById("disciplineQuickFilterBar");
+  if (filterBar && !document.getElementById("btnQuickOpenSpecialReport")) {
+    const btn = document.createElement("button");
+    btn.id = "btnQuickOpenSpecialReport";
+    btn.type = "button";
+    btn.onclick = () => openSpecialViolationReportModal();
+    btn.className = "px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] shadow-2xs transition flex items-center gap-1.5";
+    btn.innerHTML = `<i class="fa-solid fa-file-shield"></i> Lập Biên Bản Vi Phạm Đặc Biệt`;
+    filterBar.appendChild(btn);
+  }
+
+  const list = appState.specialViolationReports || [];
+  const isGVCN = (appState.roleLevel === "GVCN");
+  const canCreate = isGVCN || appState.roleLevel === "LEADER";
+
+  container.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+      <div>
+        <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-file-shield text-rose-600"></i>
+          Biên Bản Vi Phạm Nội Quy Đặc Biệt (Tài liệu thi, Đánh nhau, Vô lễ...)
+          <span class="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10.5px] font-black">${list.length} biên bản</span>
+        </h3>
+        <p class="text-[11px] text-slate-500">Lưu trữ hồ sơ xử lý vi phạm nghiêm trọng, xuất file Word/in cho Phụ huynh & Hội đồng kỷ luật ký xác nhận</p>
+      </div>
+      ${canCreate ? `
+        <button type="button" onclick="openSpecialViolationReportModal()" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm transition flex items-center gap-1.5 self-start sm:self-auto">
+          <i class="fa-solid fa-plus"></i> Lập Biên Bản Mới
+        </button>
+      ` : ""}
+    </div>
+
+    ${list.length === 0 ? `
+      <p class="text-xs text-slate-400 italic py-3 text-center">Chưa có biên bản vi phạm nội quy đặc biệt nào được lập.</p>
+    ` : `
+      <div class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+        ${list.map(rep => {
+          const meta = getSpecialViolationTypeMeta(rep.typeCode);
+          return `
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-mono font-black text-[10.5px] px-2 py-0.5 rounded bg-slate-900 text-white">${escapeHtml(rep.reportCode)}</span>
+                  <span class="px-2 py-0.5 rounded-lg border font-black text-[10.5px] ${meta.badge}">${escapeHtml(rep.typeLabel)}</span>
+                  <span class="px-2 py-0.5 rounded-md font-bold text-[10px] ${rep.parentSigned ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+                    ${rep.parentSigned ? '✓ PHHS đã ký xác nhận' : 'Chờ PHHS ký xác nhận'}
+                  </span>
+                </div>
+                <p class="text-slate-900 font-bold">Học sinh: <span class="text-rose-700">${escapeHtml(rep.studentName)}</span> <span class="text-slate-500 font-normal">(${escapeHtml(rep.team)} • ${escapeHtml(rep.createdAt)})</span></p>
+                <p class="text-slate-600"><b>Diễn biến:</b> ${escapeHtml(rep.description)}</p>
+              </div>
+
+              <div class="flex items-center gap-1.5 shrink-0 self-start sm:self-center flex-wrap">
+                <button type="button" onclick="openSpecialViolationViewerModal('${escapeAttr(rep.id)}')" class="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-900 text-slate-800 hover:text-white border border-slate-300 font-bold text-[11px] transition">
+                  <i class="fa-solid fa-eye mr-1"></i> Xem / In
+                </button>
+                <button type="button" onclick="exportSpecialViolationReportWord('${escapeAttr(rep.id)}')" class="px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-700 text-sky-800 hover:text-white border border-sky-200 font-bold text-[11px] transition" title="Tải file Word">
+                  <i class="fa-solid fa-file-word"></i>
+                </button>
+                ${isGVCN ? `
+                  <button type="button" onclick="toggleSpecialReportParentSigned('${escapeAttr(rep.id)}')" class="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white border border-emerald-200 font-bold text-[11px] transition" title="Đánh dấu Phụ huynh đã ký">
+                    <i class="fa-solid fa-signature"></i>
+                  </button>
+                  <button type="button" onclick="deleteSpecialViolationReport('${escapeAttr(rep.id)}')" class="px-2.5 py-1.5 rounded-xl bg-white hover:bg-rose-600 text-slate-400 hover:text-white border border-slate-200 font-bold text-[11px] transition" title="Xóa biên bản">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                ` : ""}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `}
+  `;
+}
+
+
+// ==================== BỘ MÁY TỔNG HỢP NĂM HỌC & XÉT RÈN LUYỆN THEO CHỈ TIÊU QUOTA (%) ====================
+function computeFullYearStudentMetrics() {
+  const allViolations = [...(appState.violations || [])];
+  const archives = appState.weeklyArchives || {};
+  const archivedWeeks = Object.keys(archives);
+
+  archivedWeeks.forEach(wKey => {
+    const arch = archives[wKey];
+    if (arch && Array.isArray(arch.violations)) {
+      arch.violations.forEach(v => {
+        if (!allViolations.some(x => x.incidentKey && x.incidentKey === v.incidentKey)) {
+          allViolations.push({ ...v, week: arch.week });
+        }
+      });
+    }
+  });
+
+  const specialReports = appState.specialViolationReports || [];
+
+  return (appState.students || []).map(st => {
+    const myVios = allViolations.filter(v => v.studentId === st.id);
+    const excusedCount = myVios.filter(v => v.criteria && v.criteria.includes("Có phép")).length;
+    const unexcusedCount = myVios.filter(v => v.criteria && (v.criteria.includes("Không phép") || v.criteria.includes("K.Phép"))).length;
+    const totalAbsent = excusedCount + unexcusedCount;
+    const lateCount = myVios.filter(v => v.criteria && v.criteria.toLowerCase().includes("trễ")).length;
+
+    const plusEvents = myVios.filter(v => parseScore(v.points, 0) > 0);
+    const minusEvents = myVios.filter(v => parseScore(v.points, 0) < 0);
+    const totalPlusPts = plusEvents.reduce((s, v) => s + parseScore(v.points, 0), 0);
+    const totalMinusPts = minusEvents.reduce((s, v) => s + parseScore(v.points, 0), 0);
+
+    // Tính điểm thi đua trung bình tích lũy qua các tuần lưu trữ + tuần hiện tại
+    const weekScores = [];
+    archivedWeeks.forEach(wKey => {
+      const arch = archives[wKey];
+      if (arch && Array.isArray(arch.students)) {
+        const found = arch.students.find(x => x.id === st.id);
+        if (found) weekScores.push(parseScore(found.diemThiDua, 100));
+      }
+    });
+    const currentWeekScore = parseScore(st.diemThiDua, 100);
+    weekScores.push(currentWeekScore);
+
+    const avgDisciplineScore = Number((weekScores.reduce((a, b) => a + b, 0) / weekScores.length).toFixed(2));
+
+    // Kiểm tra có biên bản vi phạm đặc biệt (tài liệu, đánh nhau, vô lễ...) hay không
+    const mySpecialReports = specialReports.filter(rep => {
+      if (Array.isArray(rep.students)) return rep.students.some(x => x.id === st.id);
+      return String(rep.studentId || "").includes(st.id);
+    });
+
+    // Chấm điểm tổng hợp xét rèn luyện (Composite Index) để xếp hạng công bằng từ cao xuống thấp
+    // Điểm gốc = avgDisciplineScore, trừ thêm 1.5đ/buổi không phép, 0.3đ/buổi có phép, 0.5đ/lần đi trễ, 15đ/biên bản đặc biệt
+    const compositeRankScore = Number((
+      avgDisciplineScore
+      - (unexcusedCount * 1.5)
+      - (excusedCount * 0.3)
+      - (lateCount * 0.5)
+      - (mySpecialReports.length * 15)
+    ).toFixed(2));
+
+    return {
+      student: st,
+      id: st.id,
+      hoTen: st.hoTen,
+      to: st.to,
+      chucVu: st.chucVu || "Thành viên",
+      excusedCount,
+      unexcusedCount,
+      totalAbsent,
+      lateCount,
+      totalPlusPts,
+      totalMinusPts,
+      currentWeekScore,
+      avgDisciplineScore,
+      specialReportCount: mySpecialReports.length,
+      compositeRankScore
+    };
+  });
+}
+
+function classifyStudentsByQuotaPercentages(metricsList, pctTotInput, pctKhaInput, pctDatInput) {
+  const n = metricsList.length;
+  if (n === 0) return [];
+
+  // Chuẩn hóa tỷ lệ % nhập vào
+  let pTot = Math.max(0, Math.min(100, Number(pctTotInput) || 0));
+  let pKha = Math.max(0, Math.min(100 - pTot, Number(pctKhaInput) || 0));
+  let pDat = Math.max(0, Math.min(100 - pTot - pKha, Number(pctDatInput) || 0));
+
+  // Sắp xếp từ cao xuống thấp theo điểm tổng hợp rèn luyện
+  const sorted = [...metricsList].sort((a, b) => {
+    if (b.compositeRankScore !== a.compositeRankScore) return b.compositeRankScore - a.compositeRankScore;
+    if (a.totalAbsent !== b.totalAbsent) return a.totalAbsent - b.totalAbsent;
+    return b.totalPlusPts - a.totalPlusPts;
+  });
+
+  // Tính chỉ tiêu số lượng học sinh tối đa cho từng bậc dựa trên % GVCN nhập
+  const maxTotSlots = Math.round((n * pTot) / 100);
+  const maxKhaSlots = Math.round((n * pKha) / 100);
+  const maxDatSlots = Math.round((n * pDat) / 100);
+
+  let usedTot = 0;
+  let usedKha = 0;
+  let usedDat = 0;
+
+  return sorted.map((item, idx) => {
+    let rating = "CHUA_DAT";
+    let ratingLabel = "Chưa đạt";
+    let note = "";
+
+    // Ràng buộc cứng theo Thông tư 22/2021/TT-BGDĐT:
+    // 1. Nghỉ quá 45 buổi/năm -> Bắt buộc Chưa đạt
+    if (item.totalAbsent > 45) {
+      rating = "CHUA_DAT";
+      ratingLabel = "Chưa đạt";
+      note = `Nghỉ ${item.totalAbsent}/45 buổi (vượt quy định TT22)`;
+    }
+    // 2. Có biên bản vi phạm đặc biệt nghiêm trọng (đánh nhau, gian lận...) hoặc điểm TB < 50 -> Không xếp Tốt, hạ bậc theo mức độ
+    else if (item.avgDisciplineScore < 50) {
+      rating = "CHUA_DAT";
+      ratingLabel = "Chưa đạt";
+      note = `Điểm thi đua TB thấp (${item.avgDisciplineScore}đ)`;
+    }
+    else if (item.specialReportCount > 0) {
+      if (usedDat < maxDatSlots || (pTot + pKha + pDat >= 99.9)) {
+        usedDat++;
+        rating = "DAT";
+        ratingLabel = "Đạt";
+        note = `Hạ bậc do có ${item.specialReportCount} biên bản vi phạm đặc biệt`;
+      } else {
+        rating = "CHUA_DAT";
+        ratingLabel = "Chưa đạt";
+        note = `Có ${item.specialReportCount} biên bản vi phạm đặc biệt`;
+      }
+    }
+    // 3. Phân bổ theo chỉ tiêu % (Quota) từ trên xuống dưới
+    else if (usedTot < maxTotSlots && item.unexcusedCount <= 2) {
+      usedTot++;
+      rating = "TOT";
+      ratingLabel = "Tốt";
+      note = item.chucVu !== "Thành viên"
+        ? `Chấp hành tốt nội quy, tích cực công tác (${item.chucVu})`
+        : "Chấp hành nghiêm nội quy, rèn luyện tốt";
+    } else if (usedKha < maxKhaSlots) {
+      usedKha++;
+      rating = "KHA";
+      ratingLabel = "Khá";
+      note = item.unexcusedCount > 2
+        ? `Khống chế mức Khá do nghỉ không phép ${item.unexcusedCount} buổi`
+        : (item.totalAbsent > 0 || item.lateCount > 0
+          ? `Có ý thức rèn luyện, cần khắc phục chuyên cần (${item.totalAbsent} vắng, ${item.lateCount} trễ)`
+          : "Có ý thức rèn luyện, xếp theo chỉ tiêu thi đua lớp");
+    } else if (usedDat < maxDatSlots || (pTot + pKha + pDat >= 99.9)) {
+      usedDat++;
+      rating = "DAT";
+      ratingLabel = "Đạt";
+      note = "Cần cố gắng hơn trong chấp hành nội quy và chuyên cần";
+    } else {
+      rating = "CHUA_DAT";
+      ratingLabel = "Chưa đạt";
+      note = "Chưa đạt chỉ tiêu rèn luyện cuối năm";
+    }
+
+    // Sinh nhận xét học bạ TT22 tự động
+    const commentParts = [];
+    if (rating === "TOT") {
+      commentParts.push("Phẩm chất đạo đức tốt, lễ phép, hòa đồng với bạn bè.");
+    } else if (rating === "KHA") {
+      commentParts.push("Đạo đức khá, có ý thức chấp hành nội quy trường lớp.");
+    } else if (rating === "DAT") {
+      commentParts.push("Đạo đức đạt yêu cầu, đôi lúc còn thiếu tập trung cần rèn luyện thêm.");
+    } else {
+      commentParts.push("Cần nghiêm túc rèn luyện lại ý thức tổ chức kỷ luật và chuyên cần.");
+    }
+
+    if (item.totalAbsent === 0 && item.lateCount === 0) {
+      commentParts.push("Đi học chuyên cần, đúng giờ.");
+    } else {
+      commentParts.push(`Nghỉ ${item.totalAbsent} buổi (${item.excusedCount}P, ${item.unexcusedCount}KP), đi trễ ${item.lateCount} lần.`);
+    }
+    if (item.totalPlusPts > 0) {
+      commentParts.push(`Tích cực phát biểu và tham gia phong trào (+${item.totalPlusPts}đ).`);
+    }
+
+    return {
+      ...item,
+      rank: idx + 1,
+      rating,
+      ratingLabel,
+      note,
+      autoComment: commentParts.join(" ")
+    };
+  });
+}
+
+let lastComputedYearEndResults = [];
+
+function recalculateAndRenderYearEndConduct() {
+  const totEl = document.getElementById("quotaPctTotInput");
+  const khaEl = document.getElementById("quotaPctKhaInput");
+  const datEl = document.getElementById("quotaPctDatInput");
+  const chuaDatDisplay = document.getElementById("quotaPctChuaDatDisplay");
+  const filterSel = document.getElementById("yearEndRatingFilter");
+
+  const pTot = totEl ? Number(totEl.value) || 0 : 75;
+  const pKha = khaEl ? Number(khaEl.value) || 0 : 20;
+  const pDat = datEl ? Number(datEl.value) || 0 : 5;
+  const pChuaDat = Math.max(0, Number((100 - pTot - pKha - pDat).toFixed(1)));
+
+  if (chuaDatDisplay) {
+    chuaDatDisplay.innerText = `${pChuaDat}%`;
+  }
+
+  // Lưu cấu hình tỷ lệ % của GVCN
+  localStorage.setItem("10A12_CONDUCT_QUOTA_PCT", JSON.stringify({ pTot, pKha, pDat }));
+
+  const metrics = computeFullYearStudentMetrics();
+  const classified = classifyStudentsByQuotaPercentages(metrics, pTot, pKha, pDat);
+  lastComputedYearEndResults = classified;
+
+  const countTot = classified.filter(x => x.rating === "TOT").length;
+  const countKha = classified.filter(x => x.rating === "KHA").length;
+  const countDat = classified.filter(x => x.rating === "DAT").length;
+  const countChuaDat = classified.filter(x => x.rating === "CHUA_DAT").length;
+  const total = classified.length || 1;
+
+  const setStat = (id, cnt) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = `${cnt} HS (${Math.round((cnt / total) * 100)}%)`;
+  };
+  setStat("yeStatTot", countTot);
+  setStat("yeStatKha", countKha);
+  setStat("yeStatDat", countDat);
+  setStat("yeStatChuaDat", countChuaDat);
+
+  const filterVal = filterSel ? filterSel.value : "ALL";
+  const displayed = filterVal === "ALL" ? classified : classified.filter(x => x.rating === filterVal);
+
+  const tbody = document.getElementById("yearEndConductTableBody");
+  if (!tbody) return;
+
+  const badgeMap = {
+    "TOT": "bg-emerald-100 text-emerald-800 border-emerald-300",
+    "KHA": "bg-sky-100 text-sky-800 border-sky-300",
+    "DAT": "bg-amber-100 text-amber-800 border-amber-300",
+    "CHUA_DAT": "bg-rose-100 text-rose-800 border-rose-300"
+  };
+
+  tbody.innerHTML = displayed.map((r, idx) => `
+    <tr class="${idx % 2 === 0 ? "bg-white" : "bg-slate-50/80"} border-b border-slate-200 hover:bg-sky-50/40 transition text-xs">
+      <td class="py-2.5 px-2.5 text-center font-mono font-bold text-slate-500">${r.rank}</td>
+      <td class="py-2.5 px-3">
+        <b class="text-slate-900 block">${escapeHtml(r.hoTen)}</b>
+        <span class="text-[10px] text-slate-500">${escapeHtml(r.id)} • ${escapeHtml(r.to)} • ${escapeHtml(r.chucVu)}</span>
+      </td>
+      <td class="py-2.5 px-2 text-center font-mono">
+        <b class="${r.totalAbsent > 0 ? 'text-rose-600' : 'text-slate-700'}">${r.totalAbsent}</b>
+        <span class="block text-[9.5px] text-slate-400">(${r.excusedCount}P / ${r.unexcusedCount}KP)</span>
+      </td>
+      <td class="py-2.5 px-2 text-center font-mono font-bold ${r.lateCount > 0 ? 'text-amber-600' : 'text-slate-400'}">${r.lateCount}</td>
+      <td class="py-2.5 px-2 text-center font-mono font-black text-sky-900">${r.avgDisciplineScore}đ</td>
+      <td class="py-2.5 px-2 text-center font-mono font-bold text-indigo-800">${r.compositeRankScore}</td>
+      <td class="py-2.5 px-2.5 text-center">
+        <select onchange="overrideStudentConductRating('${escapeAttr(r.id)}', this.value)" class="px-2 py-1 rounded-lg border font-black text-[11px] ${badgeMap[r.rating]} focus:outline-none cursor-pointer">
+          <option value="TOT" ${r.rating === "TOT" ? "selected" : ""}>🟢 Tốt</option>
+          <option value="KHA" ${r.rating === "KHA" ? "selected" : ""}>🔵 Khá</option>
+          <option value="DAT" ${r.rating === "DAT" ? "selected" : ""}>🟡 Đạt</option>
+          <option value="CHUA_DAT" ${r.rating === "CHUA_DAT" ? "selected" : ""}>🔴 Chưa đạt</option>
+        </select>
+      </td>
+      <td class="py-2.5 px-3 text-[11px] text-slate-700 leading-snug max-w-xs">
+        ${escapeHtml(r.autoComment)}
+      </td>
+    </tr>
+  `).join("");
+}
+
+function overrideStudentConductRating(studentId, newRating) {
+  const item = lastComputedYearEndResults.find(x => x.id === studentId);
+  if (!item) return;
+  const labelMap = { "TOT": "Tốt", "KHA": "Khá", "DAT": "Đạt", "CHUA_DAT": "Chưa đạt" };
+  item.rating = newRating;
+  item.ratingLabel = labelMap[newRating] || "Tốt";
+
+  const total = lastComputedYearEndResults.length || 1;
+  const setStat = (id, cnt) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = `${cnt} HS (${Math.round((cnt / total) * 100)}%)`;
+  };
+  setStat("yeStatTot", lastComputedYearEndResults.filter(x => x.rating === "TOT").length);
+  setStat("yeStatKha", lastComputedYearEndResults.filter(x => x.rating === "KHA").length);
+  setStat("yeStatDat", lastComputedYearEndResults.filter(x => x.rating === "DAT").length);
+  setStat("yeStatChuaDat", lastComputedYearEndResults.filter(x => x.rating === "CHUA_DAT").length);
+}
+
+function exportYearEndConductExcel() {
+  if (!lastComputedYearEndResults || lastComputedYearEndResults.length === 0) {
+    recalculateAndRenderYearEndConduct();
+  }
+  const rows = [
+    ["Hạng", "Mã HS", "Họ và tên", "Tổ", "Chức vụ", "Tổng nghỉ", "Có phép", "Không phép", "Đi trễ", "ĐTB Thi đua", "Điểm xét RL", "Xếp loại Rèn luyện TT22", "Nhận xét Học bạ gợi ý"]
+  ];
+  lastComputedYearEndResults.forEach(r => {
+    rows.push([
+      r.rank, r.id, r.hoTen, r.to, r.chucVu,
+      r.totalAbsent, r.excusedCount, r.unexcusedCount, r.lateCount,
+      r.avgDisciplineScore, r.compositeRankScore, r.ratingLabel, r.autoComment
+    ]);
+  });
+
+  if (typeof XLSX !== "undefined") {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Xet_Ren_Luyen_TT22");
+    XLSX.writeFile(wb, `Tong_Hop_Xet_Ren_Luyen_10A12_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } else {
+    const csvContent = "\ufeff" + rows.map(e => e.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Tong_Hop_Xet_Ren_Luyen_10A12_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+function renderYearEndConductGradingPanel() {
+  const hostTab = document.getElementById("tab-bien-ban") || document.getElementById("tab-danh-sach");
+  if (!hostTab) return;
+
+  let panel = document.getElementById("yearEndConductGradingPanel");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "yearEndConductGradingPanel";
+    panel.className = "mt-5 p-4 sm:p-6 rounded-3xl bg-white border-2 border-indigo-200 shadow-xs space-y-4";
+    hostTab.appendChild(panel);
+
+    const savedQuota = safeJsonParse(localStorage.getItem("10A12_CONDUCT_QUOTA_PCT"), { pTot: 75, pKha: 20, pDat: 5 });
+
+    panel.innerHTML = `
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+        <div>
+          <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-graduation-cap text-indigo-700 text-lg"></i>
+            Tổng Hợp Năm Học & Xét Rèn Luyện Cuối Năm Theo Chỉ Tiêu Thi Đua Lớp (%)
+          </h3>
+          <p class="text-[11px] text-slate-500">Tự động tổng hợp chuyên cần cả năm, điểm thi đua trung bình, biên bản vi phạm và tự động phân loại Tốt / Khá / Đạt theo tỷ lệ % thi đua của lớp</p>
+        </div>
+        <button type="button" onclick="exportYearEndConductExcel()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm transition flex items-center gap-1.5 self-start md:self-auto shrink-0">
+          <i class="fa-solid fa-file-excel"></i> Xuất Excel Học Bạ (VnEdu)
+        </button>
+      </div>
+
+      <!-- BẢNG NHẬP CHỈ TIÊU PHẦN TRĂM THI ĐUA CỦA LỚP -->
+      <div class="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-3">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <span class="text-xs font-black text-indigo-950 uppercase"><i class="fa-solid fa-sliders mr-1.5 text-indigo-600"></i>Nhập tỷ lệ % chỉ tiêu rèn luyện được phân bổ theo xếp hạng thi đua lớp:</span>
+          <div class="flex items-center gap-1.5 text-[11px]">
+            <button type="button" onclick="document.getElementById('quotaPctTotInput').value=85; document.getElementById('quotaPctKhaInput').value=15; document.getElementById('quotaPctDatInput').value=0; recalculateAndRenderYearEndConduct();" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold">Lớp Hạng Nhất (85/15/0)</button>
+            <button type="button" onclick="document.getElementById('quotaPctTotInput').value=75; document.getElementById('quotaPctKhaInput').value=20; document.getElementById('quotaPctDatInput').value=5; recalculateAndRenderYearEndConduct();" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold">Lớp Tiên Tiến (75/20/5)</button>
+            <button type="button" onclick="document.getElementById('quotaPctTotInput').value=65; document.getElementById('quotaPctKhaInput').value=25; document.getElementById('quotaPctDatInput').value=10; recalculateAndRenderYearEndConduct();" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold">Mức Trung Bình (65/25/10)</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end text-xs">
+          <div>
+            <label class="block font-bold text-emerald-900 mb-1">🟢 Tỷ lệ Tốt (%):</label>
+            <input type="number" id="quotaPctTotInput" value="${savedQuota.pTot}" min="0" max="100" oninput="recalculateAndRenderYearEndConduct()"
+              class="w-full px-3 py-2 rounded-xl border border-emerald-300 bg-white font-mono font-black text-emerald-800 text-center focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-bold text-sky-900 mb-1">🔵 Tỷ lệ Khá (%):</label>
+            <input type="number" id="quotaPctKhaInput" value="${savedQuota.pKha}" min="0" max="100" oninput="recalculateAndRenderYearEndConduct()"
+              class="w-full px-3 py-2 rounded-xl border border-sky-300 bg-white font-mono font-black text-sky-800 text-center focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-bold text-amber-900 mb-1">🟡 Tỷ lệ Đạt (%):</label>
+            <input type="number" id="quotaPctDatInput" value="${savedQuota.pDat}" min="0" max="100" oninput="recalculateAndRenderYearEndConduct()"
+              class="w-full px-3 py-2 rounded-xl border border-amber-300 bg-white font-mono font-black text-amber-800 text-center focus:outline-none">
+          </div>
+          <div class="p-2 rounded-xl bg-white border border-rose-200 text-center">
+            <span class="text-[10px] font-bold text-rose-700 uppercase block">🔴 Chưa đạt (%)</span>
+            <b id="quotaPctChuaDatDisplay" class="text-sm font-mono font-black text-rose-700">0%</b>
+          </div>
+          <div>
+            <button type="button" onclick="recalculateAndRenderYearEndConduct()" class="w-full py-2.5 px-3 rounded-xl bg-indigo-700 hover:bg-indigo-800 text-white font-black shadow-xs transition">
+              <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Tự Động Lọc & Xếp
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- THỐNG KÊ KẾT QUẢ SAU KHI LỌC -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center text-xs">
+        <div class="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+          <span class="text-[10px] font-bold text-emerald-700 uppercase block">Xếp loại Tốt</span>
+          <b id="yeStatTot" class="text-sm sm:text-base font-black text-emerald-900">0 HS</b>
+        </div>
+        <div class="p-3 rounded-2xl bg-sky-50 border border-sky-200">
+          <span class="text-[10px] font-bold text-sky-700 uppercase block">Xếp loại Khá</span>
+          <b id="yeStatKha" class="text-sm sm:text-base font-black text-sky-900">0 HS</b>
+        </div>
+        <div class="p-3 rounded-2xl bg-amber-50 border border-amber-200">
+          <span class="text-[10px] font-bold text-amber-700 uppercase block">Xếp loại Đạt</span>
+          <b id="yeStatDat" class="text-sm sm:text-base font-black text-amber-900">0 HS</b>
+        </div>
+        <div class="p-3 rounded-2xl bg-rose-50 border border-rose-200">
+          <span class="text-[10px] font-bold text-rose-700 uppercase block">Chưa đạt</span>
+          <b id="yeStatChuaDat" class="text-sm sm:text-base font-black text-rose-900">0 HS</b>
+        </div>
+      </div>
+
+      <!-- BỘ LỌC HIỂN THỊ & BẢNG CHI TIẾT -->
+      <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+        <span class="font-bold text-slate-600"><i class="fa-solid fa-circle-info text-sky-600 mr-1"></i>Hệ thống tự động ưu tiên học sinh điểm rèn luyện cao, không vắng không phép; cho phép GVCN tinh chỉnh tay từng em nếu cần.</span>
+        <select id="yearEndRatingFilter" onchange="recalculateAndRenderYearEndConduct()" class="px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-300 font-bold text-slate-800 focus:outline-none">
+          <option value="ALL">Hiển thị tất cả học sinh</option>
+          <option value="TOT">Chỉ xem nhóm Tốt</option>
+          <option value="KHA">Chỉ xem nhóm Khá</option>
+          <option value="DAT">Chỉ xem nhóm Đạt</option>
+          <option value="CHUA_DAT">Chỉ xem nhóm Chưa đạt</option>
+        </select>
+      </div>
+
+      <div class="overflow-x-auto rounded-2xl border border-slate-200 max-h-[500px]">
+        <table class="w-full border-collapse min-w-[780px]">
+          <thead class="sticky top-0 z-10">
+            <tr class="bg-slate-900 text-white text-[10.5px] uppercase">
+              <th class="py-2.5 px-2.5 text-center w-12">Hạng</th>
+              <th class="py-2.5 px-3 text-left">Học sinh</th>
+              <th class="py-2.5 px-2 text-center">Nghỉ (P/KP)</th>
+              <th class="py-2.5 px-2 text-center">Trễ</th>
+              <th class="py-2.5 px-2 text-center">ĐTB Thi đua</th>
+              <th class="py-2.5 px-2 text-center">Điểm xét RL</th>
+              <th class="py-2.5 px-2.5 text-center">Xếp loại TT22</th>
+              <th class="py-2.5 px-3 text-left">Nhận xét Học bạ tự động</th>
+            </tr>
+          </thead>
+          <tbody id="yearEndConductTableBody"></tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  recalculateAndRenderYearEndConduct();
+}
+
+// ==================== BỘ MÁY BẢN TIN ZALO CUỐI TUẦN 1-CLICK & HỘP THƯ ĐÍNH CHÍNH HỒ SƠ ====================
+function copyWeeklyZaloSummaryBulletin() {
+  const scoped = getScopedWeekData();
+  const weekNum = scoped.selectedWeek;
+  const totalStudents = scoped.students.length || 45;
+
+  const avgScore = totalStudents > 0
+    ? (scoped.students.reduce((s, st) => s + parseScore(st.diemThiDua, 100), 0) / totalStudents).toFixed(1)
+    : "100.0";
+
+  const excusedCount = scoped.violations.filter(v => v.criteria && v.criteria.includes("Có phép")).length;
+  const unexcusedCount = scoped.violations.filter(v => v.criteria && (v.criteria.includes("Không phép") || v.criteria.includes("K.Phép"))).length;
+  const lateCount = scoped.violations.filter(v => v.criteria && v.criteria.toLowerCase().includes("trễ")).length;
+
+  // Top 3 học sinh có điểm cao nhất tuần
+  const topList = [...scoped.students]
+    .filter(s => parseScore(s.diemThiDua, 100) > 100)
+    .sort((a, b) => parseScore(b.diemThiDua, 100) - parseScore(a.diemThiDua, 100))
+    .slice(0, 5)
+    .map(s => `${s.hoTen} (${parseScore(s.diemThiDua, 100)}đ)`);
+
+  const currentUrl = window.location.href.split("?")[0].split("#")[0];
+  const lookupUrl = currentUrl.substring(0, currentUrl.lastIndexOf("/")) + "/tracuu.html";
+  const tkbVer = getActiveTkbConfig().version || "hiện hành";
+
+  const bulletin = `📢 BẢN TIN TỔNG KẾT TUẦN ${weekNum} — LỚP 10A12 (K58-QT)
+Kính gửi Quý Phụ huynh và các em học sinh, GVCN xin thông tin tình hình học tập & rèn luyện của lớp trong Tuần ${weekNum}:
+
+1️⃣ Điểm thi đua trung bình lớp: ${avgScore}đ
+2️⃣ Tình hình chuyên cần cả tuần:
+   • Nghỉ có phép: ${excusedCount} lượt | Nghỉ không phép: ${unexcusedCount} lượt | Đi trễ: ${lateCount} lượt.
+3️⃣ Tuyên dương học sinh tích cực tuần:
+   • ${topList.length > 0 ? topList.join(", ") : "Tập thể lớp duy trì tốt nề nếp học tập."}
+4️⃣ Nhắc nhở tuần tới:
+   • Thực hiện đúng Thời khóa biểu ${tkbVer}.
+   • Các tổ trực nhật có mặt trước 06:30 sáng và 13:30 chiều để vệ sinh phòng học.
+
+👉 Quý Phụ huynh tra cứu chi tiết chuyên cần, điểm rèn luyện, quỹ lớp và gửi đơn xin nghỉ phép trực tuyến cho con tại:
+${lookupUrl}
+
+Trân trọng!
+GVCN: ThS. Trần Dương Quốc Mẫn.`;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(bulletin).then(() => {
+      alert(`Đã sao chép Bản tin tổng kết Tuần ${weekNum} vào bộ nhớ tạm! Thầy chỉ cần mở nhóm Zalo Phụ huynh và bấm Dán (Paste) để gửi.`);
+    }).catch(() => {
+      prompt("Sao chép bản tin gửi nhóm Zalo Phụ huynh:", bulletin);
+    });
+  } else {
+    prompt("Sao chép bản tin gửi nhóm Zalo Phụ huynh:", bulletin);
+  }
+}
+
+function renderProfileCorrectionsInbox() {
+  const tabTamTu = document.getElementById("tab-tam-tu");
+  if (!tabTamTu) return;
+
+  let box = document.getElementById("profileCorrectionsInboxBox");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "profileCorrectionsInboxBox";
+    box.className = "p-4 sm:p-5 rounded-3xl bg-white border border-amber-200 shadow-xs space-y-3 mb-5";
+    const leaveBox = document.getElementById("parentLeaveRequestsInboxBox");
+    if (leaveBox && leaveBox.nextSibling) {
+      tabTamTu.insertBefore(box, leaveBox.nextSibling);
+    } else {
+      tabTamTu.insertBefore(box, tabTamTu.firstChild);
+    }
+  }
+
+  const fromState = Array.isArray(appState.profileCorrections) ? appState.profileCorrections : [];
+  const fromLocal = safeJsonParse(localStorage.getItem("10A12_PROFILE_CORRECTIONS"), []);
+  const list = [...fromState];
+  fromLocal.forEach(item => {
+    if (item && item.id && !list.some(x => x.id === item.id)) list.push(item);
+  });
+  appState.profileCorrections = list;
+
+  box.innerHTML = `
+    <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+      <h3 class="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
+        <i class="fa-solid fa-user-pen text-amber-600"></i>
+        Yêu Cầu Đính Chính Thông Tin Hồ Sơ Từ Phụ Huynh (${list.length})
+      </h3>
+    </div>
+    ${list.length === 0 ? `
+      <p class="text-xs text-slate-400 italic py-2">Chưa có yêu cầu chỉnh sửa thông tin CCCD / SĐT / Địa chỉ nào từ phụ huynh.</p>
+    ` : `
+      <div class="space-y-2 max-h-60 overflow-y-auto pr-1 text-xs">
+        ${list.map(c => `
+          <div class="p-3 rounded-2xl bg-amber-50/40 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <b class="text-slate-900">${escapeHtml(c.studentName)}</b> <span class="text-slate-500">(${escapeHtml(c.studentId || "")} • ${escapeHtml(c.time || "")})</span>
+              <p class="text-slate-800 mt-0.5">Nội dung đề nghị sửa: <b>${escapeHtml(c.detail)}</b></p>
+            </div>
+            <button type="button" onclick="markProfileCorrectionHandled('${escapeAttr(c.id)}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shrink-0 self-start sm:self-center">
+              ✓ Đã cập nhật xong
+            </button>
+          </div>
+        `).join("")}
+      </div>
+    `}
+  `;
+}
+
+async function markProfileCorrectionHandled(corrId) {
+  if (appState.roleLevel !== "GVCN") return;
+  appState.profileCorrections = (appState.profileCorrections || []).filter(x => x.id !== corrId);
+  localStorage.setItem("10A12_PROFILE_CORRECTIONS", JSON.stringify(appState.profileCorrections));
+  saveStateToLocal();
+  renderProfileCorrectionsInbox();
+}
+
+function renderCloudScriptUrlSettingCard() {
+  const tabSettings = document.getElementById("tab-cai-dat");
+  if (!tabSettings) return;
+
+  let card = document.getElementById("cloudScriptConnectionCard");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "cloudScriptConnectionCard";
+    card.className = "p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3 mb-4";
+    const weekCard = document.getElementById("schoolYearStartSettingCard");
+    if (weekCard && weekCard.nextSibling) {
+      tabSettings.insertBefore(card, weekCard.nextSibling);
+    } else {
+      tabSettings.insertBefore(card, tabSettings.firstChild);
+    }
+  }
+
+  const curUrl = localStorage.getItem("10A12_SCRIPT_URL") || GAS_API_URL;
+  card.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+      <div>
+        <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-cloud text-sky-600"></i>
+          Liên Kết Google Sheets & Xuất Bản Tin Tuần Zalo
+        </h3>
+        <p class="text-[11px] text-slate-500">Cấu hình Web App URL Google Apps Script và tạo bản tin tổng kết tuần gửi nhóm Zalo Phụ huynh</p>
+      </div>
+      <button type="button" onclick="copyWeeklyZaloSummaryBulletin()" class="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-black text-xs shadow-xs transition flex items-center gap-1.5 self-start sm:self-auto">
+        <i class="fa-solid fa-share-from-square"></i> Copy Bản Tin Tuần Zalo
+      </button>
+    </div>
+
+    <div class="flex flex-col sm:flex-row gap-2 text-xs">
+      <input type="url" id="settingsCloudScriptUrlInput" value="${escapeAttr(curUrl)}" placeholder="https://script.google.com/macros/s/.../exec"
+        class="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 font-mono text-[11px] text-slate-800 focus:outline-none focus:border-sky-600">
+      <button type="button" onclick="saveNewCloudScriptUrl()" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black shrink-0">
+        Lưu Link Sheet
+      </button>
+    </div>
+  `;
+}
+
+function saveNewCloudScriptUrl() {
+  if (appState.roleLevel !== "GVCN") return;
+  const inp = document.getElementById("settingsCloudScriptUrlInput");
+  if (!inp || !inp.value.trim()) return;
+  localStorage.setItem("10A12_SCRIPT_URL", inp.value.trim());
+  alert("Đã lưu đường dẫn Google Apps Script mới! Trang sẽ tải lại để kết nối.");
+  location.reload();
+}
+
+
+// ==================== BỘ MÁY SƠ ĐỒ LỚP HỌC RESPONSIVE (ĐỦ SĨ SỐ • TÊN LÓT + TÊN • GỌN THOÁNG) ====================
+let seatingMobileTeamTab = "ALL"; // ALL | D1 | D2 | D3 | D4
+let seatingSwapModeEnabled = false;
+let seatingSelectedCoords = null; // { r, c }
+
+function getSmartShortStudentName(fullName) {
+  const clean = String(fullName || "").trim();
+  if (!clean) return "";
+  const parts = clean.split(/\s+/);
+  if (parts.length <= 2) return clean;
+  // Luôn hiển thị Tên lót + Tên (2 từ cuối, VD: "Bùi Trần Khánh Nhi" -> "Khánh Nhi")
+  return parts.slice(-2).join(" ");
+}
+
+function isRealLeadershipRole(roleStr) {
+  const r = String(roleStr || "").trim();
+  if (!r) return false;
+  const lower = r.toLowerCase();
+  if (lower === "tổ viên" || lower === "thành viên" || lower === "học sinh" || lower === "member") {
+    return false;
+  }
+  return true;
+}
+
+function getCompactRoleBadgeText(roleStr) {
+  const raw = String(roleStr || "").trim();
+  if (!isRealLeadershipRole(raw)) return "";
+  const map = {
+    "Lớp trưởng": "LT",
+    "Lớp phó Học tập": "P.HT",
+    "Phó HT": "P.HT",
+    "Lớp phó Lao động": "P.LĐ",
+    "Phó LĐ": "P.LĐ",
+    "Lớp phó VTM": "VTM",
+    "Phó VTM": "VTM",
+    "Bí thư Chi đoàn": "Bí thư",
+    "Bí thư": "Bí thư",
+    "Thủ quỹ lớp": "Thủ quỹ",
+    "Thủ quỹ": "Thủ quỹ",
+    "Ban Thi đua": "Thi đua",
+    "Cờ đỏ": "Cờ đỏ"
+  };
+  const parts = raw.split(/[,;/]+/).map(p => p.trim()).filter(p => isRealLeadershipRole(p));
+  if (parts.length === 0) return "";
+  return parts.map(p => map[p] || p).join(" • ");
+}
+
+function findStudentInfoBySeatName(seatName) {
+  if (!seatName) return null;
+  const target = removeVietnameseTones(seatName);
+  const list = Array.isArray(appState.students) ? appState.students : [];
+  let exact = list.find(s => removeVietnameseTones(s.hoTen) === target);
+  if (exact) return exact;
+  // Khớp theo 2 chữ cuối nếu họ đệm có biến thể
+  const parts = String(seatName).trim().split(/\s+/);
+  if (parts.length >= 2) {
+    const tail = removeVietnameseTones(parts.slice(-2).join(" "));
+    const tailMatches = list.filter(s => {
+      const sp = String(s.hoTen || "").trim().split(/\s+/);
+      return removeVietnameseTones(sp.slice(-2).join(" ")) === tail;
+    });
+    if (tailMatches.length === 1) return tailMatches[0];
+  }
+  return null;
+}
+
+function getTeamDotColorClass(teamStr) {
+  if (teamStr === "Tổ 1") return "bg-sky-500";
+  if (teamStr === "Tổ 2") return "bg-emerald-500";
+  if (teamStr === "Tổ 3") return "bg-amber-500";
+  if (teamStr === "Tổ 4") return "bg-purple-500";
+  return "bg-slate-400";
+}
+
+function canCurrentUserEditSeating() {
+  if (!appState.currentUser) return false;
+  if (appState.roleLevel === "GVCN") return true;
+  if (!appState.allowStudentLeaderEdit) return false;
+  const r = String(appState.currentUser.role || "").toLowerCase();
+  return r.includes("lớp trưởng") || r.includes("bí thư");
+}
+
+function setSeatingMobileDayFilter(dayFilter) {
+  seatingMobileTeamTab = dayFilter;
+  renderSeatingChart();
+}
+
+function toggleSeatingSwapMode() {
+  if (!canCurrentUserEditSeating()) {
+    alert("Chỉ GVCN hoặc Lớp trưởng mới có quyền sắp xếp lại chỗ ngồi!");
+    return;
+  }
+  seatingSwapModeEnabled = !seatingSwapModeEnabled;
+  seatingSelectedCoords = null;
+  renderSeatingChart();
+}
+
+function handleModernSeatClick(r, c) {
+  const layout = currentSeatingLayout || DEFAULT_SEATING_LAYOUT;
+  const seat = (layout[r] && layout[r][c]) ? layout[r][c] : { name: "", role: "" };
+  const canEdit = canCurrentUserEditSeating();
+
+  if (canEdit && (seatingSwapModeEnabled || seatingSelectedCoords !== null)) {
+    if (!seatingSelectedCoords) {
+      seatingSelectedCoords = { r, c };
+      renderSeatingChart();
+      return;
+    }
+    if (seatingSelectedCoords.r === r && seatingSelectedCoords.c === c) {
+      seatingSelectedCoords = null;
+      renderSeatingChart();
+      return;
+    }
+    const firstSeat = layout[seatingSelectedCoords.r][seatingSelectedCoords.c];
+    layout[seatingSelectedCoords.r][seatingSelectedCoords.c] = { ...seat };
+    layout[r][c] = { ...firstSeat };
+    seatingSelectedCoords = null;
+    currentSeatingLayout = layout;
+    appState.isSeatingDirty = true;
+    saveStateToLocal();
+    renderSeatingChart();
+    return;
+  }
+
+  if (seat && seat.name) {
+    const st = findStudentInfoBySeatName(seat.name);
+    if (st && typeof openStudentDisciplineDetailModal === "function") {
+      openStudentDisciplineDetailModal(st.id);
+    } else {
+      alert(`Vị trí Dãy ${Math.floor(c / 2) + 1} • Bàn ${layout.length - r}: ${seat.name}`);
+    }
+  } else if (canEdit) {
+    seatingSwapModeEnabled = true;
+    seatingSelectedCoords = { r, c };
+    renderSeatingChart();
+  }
+}
+
+function renderSingleModernSeatCell(r, c, seat, layout) {
+  const hasStudent = Boolean(seat && seat.name && seat.name.trim());
+  const isSelected = Boolean(seatingSelectedCoords && seatingSelectedCoords.r === r && seatingSelectedCoords.c === c);
+  const stObj = hasStudent ? findStudentInfoBySeatName(seat.name) : null;
+  const score = stObj ? parseScore(stObj.diemThiDua, 100) : 100;
+  const teamStr = stObj ? stObj.to : "";
+  const dotCls = getTeamDotColorClass(teamStr);
+
+  // Chỉ lấy chức vụ thật sự (tuyệt đối bỏ qua "Tổ viên" / "Thành viên")
+  const candidateRole = (stObj && isRealLeadershipRole(stObj.chucVu))
+    ? stObj.chucVu
+    : (seat && isRealLeadershipRole(seat.role) ? seat.role : "");
+  const shortRole = getCompactRoleBadgeText(candidateRole);
+
+  // Luôn hiển thị Tên lót + Tên (2 từ cuối)
+  const displayName = !hasStudent ? "Trống" : getSmartShortStudentName(seat.name);
+
+  let cardStateCls = "bg-white border-slate-200 hover:border-sky-400 hover:bg-sky-50/40";
+  if (!hasStudent) {
+    cardStateCls = "bg-slate-50/70 border-dashed border-slate-300 text-slate-400";
+  } else if (isSelected) {
+    cardStateCls = "bg-amber-50 border-2 border-amber-500 ring-2 ring-amber-300 shadow-md scale-[1.02]";
+  } else if (score < 70) {
+    cardStateCls = "bg-rose-50/60 border-rose-300 hover:border-rose-400";
+  } else if (score > 100) {
+    cardStateCls = "bg-emerald-50/50 border-emerald-300 hover:border-emerald-400";
+  } else if (shortRole) {
+    cardStateCls = "bg-sky-50/40 border-sky-200 hover:border-sky-400";
+  }
+
+  return `
+    <div onclick="handleModernSeatClick(${r}, ${c})"
+      title="${hasStudent ? `${escapeAttr(seat.name)} (${escapeAttr(teamStr)}${shortRole ? ' • ' + escapeAttr(candidateRole) : ''} • ${score}đ) - Bấm để xem chi tiết` : 'Ghế trống'}"
+      class="px-2.5 py-2 rounded-xl border ${cardStateCls} cursor-pointer transition-all select-none flex flex-col justify-center min-h-[42px] relative overflow-hidden">
+      ${hasStudent ? `
+        <div class="flex items-center justify-between gap-1 min-w-0">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="w-2 h-2 rounded-full ${dotCls} shrink-0"></span>
+            <span class="font-bold text-slate-900 text-xs whitespace-nowrap truncate">
+              ${escapeHtml(displayName)}
+            </span>
+          </div>
+          ${shortRole ? `
+            <span class="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-black text-[9px] shrink-0 uppercase tracking-tighter">
+              ${escapeHtml(shortRole)}
+            </span>
+          ` : ''}
+        </div>
+      ` : `
+        <span class="text-[10.5px] text-center italic text-slate-400">Trống</span>
+      `}
+    </div>
+  `;
+}
+
+function sanitizeSeatingLayoutWithRoster(layout) {
+  const base = Array.isArray(layout) && layout.length === 6
+    ? layout
+    : JSON.parse(JSON.stringify(DEFAULT_SEATING_LAYOUT));
+
+  const activeStudents = Array.isArray(appState.students) ? appState.students : [];
+  if (activeStudents.length === 0) return base;
+
+  // Xây dựng bản đồ tìm nhanh học sinh hiện hữu (theo tên đầy đủ không dấu hoặc 2 chữ cuối duy nhất)
+  const byFullClean = {};
+  const byTailClean = {};
+  activeStudents.forEach(s => {
+    const fullClean = removeVietnameseTones(s.hoTen);
+    if (fullClean) byFullClean[fullClean] = s;
+    const parts = String(s.hoTen || "").trim().split(/\s+/);
+    const tail = removeVietnameseTones(parts.slice(-2).join(" "));
+    if (tail) {
+      if (!byTailClean[tail]) byTailClean[tail] = [];
+      byTailClean[tail].push(s);
+    }
+  });
+
+  const placedStudentIds = new Set();
+  const normalizedGrid = Array.from({ length: 6 }, (_, r) => {
+    const srcRow = Array.isArray(base[r]) ? base[r] : [];
+    return Array.from({ length: 8 }, (__, c) => {
+      const seat = srcRow[c];
+      if (!seat || !seat.name || !String(seat.name).trim()) {
+        return { name: "", role: "" };
+      }
+      const cleanSeat = removeVietnameseTones(seat.name);
+      let matchedSt = byFullClean[cleanSeat] || null;
+      if (!matchedSt) {
+        const sp = String(seat.name).trim().split(/\s+/);
+        const tail = removeVietnameseTones(sp.slice(-2).join(" "));
+        if (tail && byTailClean[tail] && byTailClean[tail].length === 1) {
+          matchedSt = byTailClean[tail][0];
+        }
+      }
+
+      if (!matchedSt || placedStudentIds.has(matchedSt.id)) {
+        return { name: "", role: "" };
+      }
+
+      placedStudentIds.add(matchedSt.id);
+      const realRole = isRealLeadershipRole(matchedSt.chucVu) ? getCompactRoleBadgeText(matchedSt.chucVu) : "";
+      return {
+        name: matchedSt.hoTen,
+        role: realRole
+      };
+    });
+  });
+
+  // Tự động xếp toàn bộ học sinh của lớp chưa có ghế vào các ghế trống (từ Bàn 1 gần bảng lên Bàn 6)
+  const unplacedStudents = activeStudents.filter(s => !placedStudentIds.has(s.id));
+  if (unplacedStudents.length > 0) {
+    let idx = 0;
+    for (let r = 5; r >= 0 && idx < unplacedStudents.length; r--) {
+      for (let c = 0; c < 8 && idx < unplacedStudents.length; c++) {
+        if (!normalizedGrid[r][c].name) {
+          const st = unplacedStudents[idx++];
+          placedStudentIds.add(st.id);
+          normalizedGrid[r][c] = {
+            name: st.hoTen,
+            role: isRealLeadershipRole(st.chucVu) ? getCompactRoleBadgeText(st.chucVu) : ""
+          };
+        }
+      }
+    }
+  }
+
+  return normalizedGrid;
+}
+
+function applyCloudSeatingRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  if (Array.isArray(rows[0])) {
+    currentSeatingLayout = sanitizeSeatingLayoutWithRoster(rows);
+  }
+}
+
+async function syncSeatingToCloudNow() {
+  if (!canCurrentUserEditSeating()) return;
+  currentSeatingLayout = sanitizeSeatingLayoutWithRoster(currentSeatingLayout);
+  saveStateToLocal();
+  renderSeatingChart();
+  await callApi("saveSeatingLayout", { seatingLayout: currentSeatingLayout }, "POST");
+  appState.isSeatingDirty = false;
+  renderSeatingChart();
+}
+
+function renderSeatingChart() {
+  const tabSoDo = document.getElementById("tab-so-do-lop");
+  if (!tabSoDo) return;
+
+  // Ẩn toàn bộ khối sơ đồ/chú thích kiểu cũ bên trong #tab-so-do-lop (giữ nguyên thanh tiêu đề nút bấm đầu tab)
+  Array.from(tabSoDo.children).forEach((child, idx) => {
+    if (child.id === "modernSeatingChartRoot") return;
+    const hasTopToolbarBtns = child.querySelector("#btnRotateSeating, #btnSaveSeating, #btnSaveSeatingHistory") ||
+                              (child.innerText || "").includes("Xoay Dãy Tuần Hoàn");
+    if (hasTopToolbarBtns && idx === 0) {
+      return;
+    }
+    if (
+      child.id === "classroomGrid" ||
+      child.id === "seatingChartGrid" ||
+      child.id === "seatingChartContainer" ||
+      (child.innerText || "").includes("PHÂN MÀU THEO TỔ THỰC TẾ") ||
+      (child.innerText || "").includes("LỐI ĐI") ||
+      (child.innerText || "").includes("BÀN 6")
+    ) {
+      child.style.display = "none";
+    }
+  });
+
+  tabSoDo.querySelectorAll("*").forEach(el => {
+    if (el.closest("#modernSeatingChartRoot")) return;
+    if (el.id === "classroomGrid" || el.id === "seatingChartGrid") {
+      el.style.display = "none";
+    }
+  });
+
+  let host = document.getElementById("modernSeatingChartRoot");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "modernSeatingChartRoot";
+    tabSoDo.appendChild(host);
+  }
+  host.style.display = "block";
+  host.className = "w-full space-y-3 mt-3";
+
+  const prevSerialized = JSON.stringify(currentSeatingLayout || []);
+  currentSeatingLayout = sanitizeSeatingLayoutWithRoster(currentSeatingLayout);
+  if (JSON.stringify(currentSeatingLayout) !== prevSerialized) {
+    saveStateToLocal();
+  }
+  const layout = currentSeatingLayout;
+
+  const canEdit = canCurrentUserEditSeating();
+  const totalRows = layout.length;
+  let seatedCount = 0;
+  layout.forEach(row => row.forEach(seat => { if (seat && seat.name) seatedCount++; }));
+
+  // Thanh điều khiển gọn nhẹ (đã bỏ nút thu gọn/đầy đủ tên theo yêu cầu)
+  const toolbarHtml = `
+    <div class="p-2.5 sm:p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="px-3 py-1.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 font-black flex items-center gap-1.5">
+          <i class="fa-solid fa-users text-sky-600"></i>
+          <span>Đã xếp chỗ: ${seatedCount} / ${(appState.students || []).length} HS</span>
+        </span>
+
+        ${canEdit ? `
+          <button type="button" onclick="toggleSeatingSwapMode()"
+            class="px-3 py-1.5 rounded-xl border font-bold transition flex items-center gap-1.5 ${seatingSwapModeEnabled ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'}">
+            <i class="fa-solid fa-arrows-rotate"></i>
+            <span>${seatingSwapModeEnabled ? 'Đang bật Đổi chỗ' : 'Chế độ đổi chỗ'}</span>
+          </button>
+        ` : ''}
+      </div>
+
+      <!-- Chú thích màu Tổ gọn gàng -->
+      <div class="flex items-center gap-3 text-[11px] font-bold text-slate-600 flex-wrap">
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block"></i>Tổ 1</span>
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></i>Tổ 2</span>
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></i>Tổ 3</span>
+        <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block"></i>Tổ 4</span>
+      </div>
+    </div>
+
+    ${appState.isSeatingDirty ? `
+      <div class="p-2.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 text-xs font-bold flex items-center justify-between gap-2">
+        <span><i class="fa-solid fa-triangle-exclamation text-rose-600 mr-1.5"></i>Sơ đồ chỗ ngồi vừa thay đổi nhưng <b>chưa lưu lên Google Sheets</b> (tạm khóa tự làm mới để không mất thao tác của Thầy).</span>
+        <button type="button" onclick="syncSeatingToCloudNow()" class="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] shrink-0"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>Lưu Ngay</button>
+      </div>
+    ` : ""}
+    ${seatingSwapModeEnabled ? `
+      <div class="p-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-bold flex items-center justify-between gap-2">
+        <span>
+          <i class="fa-solid fa-hand-pointer text-amber-600 mr-1.5"></i>
+          ${seatingSelectedCoords
+            ? `Đã chọn ghế của <b>${escapeHtml((layout[seatingSelectedCoords.r][seatingSelectedCoords.c] || {}).name || "Ghế trống")}</b> — Bấm vào ghế thứ 2 để hoán đổi!`
+            : "Bấm vào ghế thứ nhất, sau đó bấm vào ghế thứ hai để hoán đổi vị trí."}
+        </span>
+        <button type="button" onclick="toggleSeatingSwapMode()" class="px-2.5 py-1 rounded-lg bg-white border border-amber-300 text-[11px] font-black shrink-0">Xong</button>
+      </div>
+    ` : ''}
+  `;
+
+  const podiumBottomHtml = `
+    <div class="grid grid-cols-12 gap-2 items-center pt-1">
+      <div class="col-span-8 sm:col-span-9 p-2.5 rounded-2xl bg-slate-900 text-white text-center shadow-xs">
+        <span class="text-xs font-black uppercase tracking-wider"><i class="fa-solid fa-chalkboard mr-1.5 text-sky-400"></i>BẢNG ĐEN • BỤC GIẢNG (PHÍA TRƯỚC LỚP)</span>
+      </div>
+      <div class="col-span-4 sm:col-span-3 p-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-center">
+        <span class="text-[10.5px] font-black uppercase text-amber-900 block"><i class="fa-solid fa-chalkboard-user mr-1"></i>Bàn GV • Cửa</span>
+      </div>
+    </div>
+  `;
+
+  // ==================== GIAO DIỆN ĐIỆN THOẠI (< 768px): CHIA THẺ TỪNG DÃY RỘNG RÃI ====================
+  const dayTabs = [
+    { key: "ALL", label: "Tất cả 4 Dãy" },
+    { key: "D1", label: "Dãy 1", idx: 0 },
+    { key: "D2", label: "Dãy 2", idx: 1 },
+    { key: "D3", label: "Dãy 3", idx: 2 },
+    { key: "D4", label: "Dãy 4", idx: 3 }
+  ];
+
+  const daysToRenderMobile = seatingMobileTeamTab === "ALL"
+    ? [0, 1, 2, 3]
+    : [dayTabs.find(t => t.key === seatingMobileTeamTab)?.idx ?? 0];
+
+  const mobileViewHtml = `
+    <div class="md:hidden space-y-3">
+      <div class="flex items-center gap-1.5 overflow-x-auto pb-1">
+        ${dayTabs.map(t => `
+          <button type="button" onclick="setSeatingMobileDayFilter('${t.key}')"
+            class="px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition ${seatingMobileTeamTab === t.key ? 'bg-indigo-700 text-white shadow-xs' : 'bg-white text-slate-700 border border-slate-200'}">
+            ${t.label}
+          </button>
+        `).join("")}
+      </div>
+
+      <div class="space-y-3">
+        ${daysToRenderMobile.map(dayIdx => {
+          const cLeft = dayIdx * 2;
+          const cRight = dayIdx * 2 + 1;
+          const orderedRows = [];
+          for (let r = totalRows - 1; r >= 0; r--) {
+            orderedRows.push({ r, banSo: totalRows - r });
+          }
+
+          return `
+            <div class="p-3.5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-2.5">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span class="text-xs font-black uppercase text-indigo-900 flex items-center gap-1.5">
+                  <span class="w-6 h-6 rounded-lg bg-indigo-600 text-white text-xs flex items-center justify-center font-black">${dayIdx + 1}</span>
+                  Dãy Bàn Số ${dayIdx + 1}
+                </span>
+                <span class="text-[10.5px] font-bold text-slate-400">Bàn 1 (Trên) → Bàn ${totalRows} (Dưới)</span>
+              </div>
+
+              <div class="space-y-2">
+                ${orderedRows.map(({ r, banSo }) => {
+                  const leftSeat = (layout[r] && layout[r][cLeft]) || { name: "", role: "" };
+                  const rightSeat = (layout[r] && layout[r][cRight]) || { name: "", role: "" };
+                  return `
+                    <div class="flex items-center gap-2">
+                      <span class="w-11 text-[10.5px] font-mono font-black text-slate-400 shrink-0">Bàn ${banSo}</span>
+                      <div class="flex-1 grid grid-cols-2 gap-2">
+                        ${renderSingleModernSeatCell(r, cLeft, leftSeat, layout)}
+                        ${renderSingleModernSeatCell(r, cRight, rightSeat, layout)}
+                      </div>
+                    </div>
+                  `;
+                }).join("")}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      ${podiumBottomHtml}
+    </div>
+  `;
+
+  // ==================== GIAO DIỆN MÁY TÍNH (>= 768px): 4 DÃY × 6 HÀNG THOÁNG GỌN ====================
+  const desktopRowsOrdered = [];
+  for (let r = 0; r < totalRows; r++) {
+    desktopRowsOrdered.push({ r, banSo: totalRows - r });
+  }
+
+  const dayHeaderColors = [
+    "bg-blue-700 text-white",
+    "bg-purple-700 text-white",
+    "bg-emerald-700 text-white",
+    "bg-orange-600 text-white"
+  ];
+
+  const desktopViewHtml = `
+    <div class="hidden md:block space-y-2.5">
+      <div class="grid grid-cols-12 gap-2.5 items-center text-center">
+        <div class="col-span-5 grid grid-cols-2 gap-2.5">
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[0]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 1</div>
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[1]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 2</div>
+        </div>
+        <div class="col-span-2 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 font-black text-[10.5px] uppercase">
+          Lối đi
+        </div>
+        <div class="col-span-5 grid grid-cols-2 gap-2.5">
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[2]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 3</div>
+          <div class="py-1.5 rounded-xl ${dayHeaderColors[3]} font-black text-xs uppercase tracking-wide shadow-2xs">Dãy 4</div>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        ${desktopRowsOrdered.map(({ r, banSo }) => {
+          const renderDeskPair = (dayIdx) => {
+            const cLeft = dayIdx * 2;
+            const cRight = dayIdx * 2 + 1;
+            const leftSeat = (layout[r] && layout[r][cLeft]) || { name: "", role: "" };
+            const rightSeat = (layout[r] && layout[r][cRight]) || { name: "", role: "" };
+            return `
+              <div class="p-1.5 rounded-2xl bg-slate-50/90 border border-slate-200/90 grid grid-cols-2 gap-1.5">
+                ${renderSingleModernSeatCell(r, cLeft, leftSeat, layout)}
+                ${renderSingleModernSeatCell(r, cRight, rightSeat, layout)}
+              </div>
+            `;
+          };
+          return `
+            <div class="grid grid-cols-12 gap-2.5 items-center">
+              <div class="col-span-5 grid grid-cols-2 gap-2.5">
+                ${renderDeskPair(0)}
+                ${renderDeskPair(1)}
+              </div>
+              <div class="col-span-2 flex justify-center">
+                <span class="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-500 font-mono font-black text-[10.5px]">
+                  BÀN ${banSo}
+                </span>
+              </div>
+              <div class="col-span-5 grid grid-cols-2 gap-2.5">
+                ${renderDeskPair(2)}
+                ${renderDeskPair(3)}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      ${podiumBottomHtml}
+    </div>
+  `;
+
+  host.innerHTML = toolbarHtml + mobileViewHtml + desktopViewHtml;
+}
+
+// Khóa hàm renderSeatingChart vĩnh viễn để các file JS nạp sau không ghi đè lại giao diện cũ
+const _lockedRenderSeatingChartFn = renderSeatingChart;
+try {
+  Object.defineProperty(window, "renderSeatingChart", {
+    configurable: false,
+    enumerable: true,
+    get: function() { return _lockedRenderSeatingChartFn; },
+    set: function() { /* Ngăn chặn ghi đè từ script cũ */ }
+  });
+} catch (e) {
+  window.renderSeatingChart = _lockedRenderSeatingChartFn;
+}
+
+const PUBLIC_API_ACTIONS = new Set([
+  "uploadPublicClassMedia",
+  "loginUser",
+  "reissueSessionToken",
+  "lookupStudent",
+  "getPublicFundStatement",
+  "changeStudentPassword"
+]);
+
+function updateCloudConnectionIndicator(isOnline, detailText = "") {
+  let badge = document.getElementById("globalCloudSyncStatusPill");
+  const topAnchor = document.getElementById("digitalClockText") || document.getElementById("currentUserRoleBadge");
+  if (!badge && topAnchor && topAnchor.parentElement) {
+    badge = document.createElement("span");
+    badge.id = "globalCloudSyncStatusPill";
+    badge.className = "ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1";
+    topAnchor.parentElement.appendChild(badge);
+  }
+  if (badge) {
+    if (isOnline) {
+      badge.className = "ml-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold inline-flex items-center gap-1";
+      badge.innerHTML = `<i class="fa-solid fa-cloud-check text-emerald-600"></i><span class="hidden sm:inline">Đồng bộ Cloud</span>`;
+    } else {
+      badge.className = "ml-1.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold inline-flex items-center gap-1";
+      badge.innerHTML = `<i class="fa-solid fa-wifi text-amber-600"></i><span>${escapeHtml(detailText || "Ngoại tuyến")}</span>`;
+    }
+  }
+}
+
+async function callApi(action, data = {}, method = "POST", isRetry = false) {
+  try {
+    const payload = PUBLIC_API_ACTIONS.has(action)
+      ? { action, ...data }
+      : { action, authToken: appState.authToken || "", ...data };
+
+    let resJson;
+    if (method === "GET") {
+      const query = new URLSearchParams(payload).toString();
+      const res = await fetch(`${GAS_API_URL}?${query}`, { redirect: "follow" });
+      resJson = await res.json();
+    } else {
+      const res = await fetch(GAS_API_URL, {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+      });
+      resJson = await res.json();
+    }
+
+    // Nếu token hết hạn hoặc chưa có token trên Sheet: tự động xin cấp lại token ngầm, KHÔNG BAO GIỜ tự văng đăng nhập
+    if (resJson && resJson.status === "unauthorized" && action !== "loginUser" && action !== "reissueSessionToken" && !isRetry && appState.currentUser) {
+      const renewed = await trySilentTokenExchange();
+      if (renewed) {
+        return await callApi(action, data, method, true);
+      }
+      updateCloudConnectionIndicator(false, "Chờ đồng bộ");
+      return { status: "offline", message: "Đang lưu cục bộ (chưa khớp token máy chủ)." };
+    }
+
+    if (resJson && resJson.status === "success") {
+      updateCloudConnectionIndicator(true);
+    }
+    return resJson;
+  } catch (err) {
+    console.warn(`[Offline Mode] API ${action}:`, err);
+    updateCloudConnectionIndicator(false, "Mất mạng");
+    return { status: "offline", message: "Đang lưu trữ ngoại tuyến." };
+  }
+}
+
+async function syncWithCloud() {
+  if (!appState.currentUser) return null;
+  if (!appState.authToken) {
+    await trySilentTokenExchange();
+  }
+  const res = await callApi("getInitialData", {}, "GET");
+  if (res && res.status === "success") {
+    // Nạp trước danh sách học sinh đã xóa từ Cloud để lọc sạch tuyệt đối
+    if (Array.isArray(res.deletedStudents)) appState.deletedStudents = res.deletedStudents;
+    if (res.config && res.config.deletedStudentsJson) {
+      const parsedDel = safeJsonParse(res.config.deletedStudentsJson, null);
+      if (Array.isArray(parsedDel)) appState.deletedStudents = parsedDel;
+    }
+    localStorage.setItem("10A12_DELETED_STUDENTS", JSON.stringify(appState.deletedStudents || []));
+
+    if (Array.isArray(res.students) && res.students.length > 0) {
+      const passOverrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+      res.students.forEach(st => {
+        if (st.id && st.matKhau && st.matKhau !== "123456") {
+          passOverrides[st.id] = String(st.matKhau);
+        }
+      });
+      localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(passOverrides));
+      appState.students = normalizeStudentRosterAccounts(res.students, appState.deletedStudents);
+    } else if (appState.roleLevel === "GVCN" && appState.students.length > 0 && !appState._autoSeededRosterOnce) {
+      appState._autoSeededRosterOnce = true;
+      appState.students = normalizeStudentRosterAccounts(appState.students, appState.deletedStudents);
+      callApi("saveAllStudentsBatch", { students: appState.students }, "POST");
+    } else {
+      appState.students = normalizeStudentRosterAccounts(appState.students, appState.deletedStudents);
+    }
+    if (Array.isArray(res.violations)) appState.violations = res.violations;
+    if (Array.isArray(res.campaigns) && res.campaigns.length > 0) appState.campaigns = res.campaigns;
+    if (Array.isArray(res.fundPayments)) appState.fundPayments = res.fundPayments;
+    if (Array.isArray(res.cashbook)) appState.cashbook = res.cashbook;
+    if (Array.isArray(res.auditLogs)) appState.auditLogs = res.auditLogs;
+    if (Array.isArray(res.deletedStudents)) appState.deletedStudents = res.deletedStudents;
+    if (res.config && res.config.deletedStudentsJson) {
+      const parsedDel = safeJsonParse(res.config.deletedStudentsJson, null);
+      if (Array.isArray(parsedDel)) appState.deletedStudents = parsedDel;
+    }
+    if (Array.isArray(res.letters)) appState.letters = res.letters;
+    if (Array.isArray(res.leaveRequests)) {
+      const localLeaves = safeJsonParse(localStorage.getItem("10A12_LEAVE_REQUESTS"), []);
+      const merged = [...res.leaveRequests];
+      localLeaves.forEach(ll => {
+        if (!merged.some(m => m.id === ll.id)) merged.push(ll);
+      });
+      appState.leaveRequests = merged;
+    }
+    if (Array.isArray(res.periodLogs)) appState.periodLogs = res.periodLogs;
+    if (res.attendanceRecords && typeof res.attendanceRecords === "object") appState.attendanceRecords = res.attendanceRecords;
+    if (res.dutyByWeek && typeof res.dutyByWeek === "object") appState.dutyByWeek = res.dutyByWeek;
+    if (res.dutyAssignments && typeof res.dutyAssignments === "object") appState.dutyAssignments = res.dutyAssignments;
+    if (Array.isArray(res.volunteerLaborList)) appState.volunteerLaborList = res.volunteerLaborList;
+    if (Array.isArray(res.vtmEvents)) appState.vtmEvents = res.vtmEvents;
+    if (Array.isArray(res.classMedia)) appState.classMedia = res.classMedia;
+    if (res.weeklyArchives && typeof res.weeklyArchives === "object") appState.weeklyArchives = res.weeklyArchives;
+
+    if (res.rolloverInfo && res.rolloverInfo.rolledOver) {
+      const cw = Number(res.rolloverInfo.currentWeek) || getAutoSchoolWeek();
+      localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(cw));
+      appState.lastAutoRolloverWeek = cw;
+      appState.selectedWeek = cw;
+      if (res.rolloverInfo.rolledOverAt) appState.lastAutoRolloverAt = String(res.rolloverInfo.rolledOverAt);
+    }
+
+    if (res.config && typeof res.config === "object") {
+      if (res.config.allowStudentLeaderEdit !== undefined) {
+        appState.allowStudentLeaderEdit = (res.config.allowStudentLeaderEdit === true || String(res.config.allowStudentLeaderEdit).toLowerCase() === "true");
+      }
+      if (res.config.gvcnPassword && !localStorage.getItem("10A12_GVCN_PASS_DIRTY")) {
+        localStorage.setItem("10A12_GVCN_PASSWORD", String(res.config.gvcnPassword));
+      }
+      if (res.config.customTicker !== undefined) appState.customTicker = String(res.config.customTicker || "");
+      if (res.config.specialViolationReportsJson) {
+        const parsedReports = safeJsonParse(res.config.specialViolationReportsJson, null);
+        if (Array.isArray(parsedReports)) appState.specialViolationReports = parsedReports;
+      }
+      if (Array.isArray(res.profileCorrections)) {
+        const localCorr = safeJsonParse(localStorage.getItem("10A12_PROFILE_CORRECTIONS"), []);
+        const mergedCorr = [...res.profileCorrections];
+        localCorr.forEach(lc => { if (!mergedCorr.some(mc => mc.id === lc.id)) mergedCorr.push(lc); });
+        appState.profileCorrections = mergedCorr;
+      }
+      if (res.config.schoolYearStartDate) {
+        const normIso = (() => {
+          const m = normalizeDateToMonday(res.config.schoolYearStartDate);
+          return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}-${String(m.getDate()).padStart(2, "0")}`;
+        })();
+        localStorage.setItem("10A12_SCHOOL_START_DATE", normIso);
+        SCHOOL_YEAR_START_MONDAY = getSchoolYearStartMonday();
+      }
+      if (res.config.tkbCustomImage) appState.tkbCustomImage = String(res.config.tkbCustomImage);
+      if (res.config.tkbUpdatedAt) appState.tkbUpdatedAt = String(res.config.tkbUpdatedAt);
+      if (res.config.tkbConfigJson) {
+        const parsedTkb = safeJsonParse(res.config.tkbConfigJson, null);
+        if (parsedTkb) {
+          appState.tkbConfig = normalizeTkbConfig(parsedTkb);
+          if (appState.tkbCustomImage && String(appState.tkbCustomImage).startsWith("data:image")) {
+            appState.tkbConfig.imageBase64 = String(appState.tkbCustomImage);
+          }
+        }
+      } else if (res.config.tkbVersionLabel || res.config.tkbEffectiveDate) {
+        const curTkb = getActiveTkbConfig();
+        if (res.config.tkbVersionLabel) curTkb.versionLabel = String(res.config.tkbVersionLabel);
+        if (res.config.tkbEffectiveDate) curTkb.effectiveDate = String(res.config.tkbEffectiveDate);
+        curTkb.version = curTkb.effectiveDate ? `${curTkb.versionLabel} (Từ ${curTkb.effectiveDate})` : curTkb.versionLabel;
+      }
+      if (res.config.tkbCustomImage && String(res.config.tkbCustomImage).startsWith("data:image")) {
+        getActiveTkbConfig().imageBase64 = String(res.config.tkbCustomImage);
+      }
+      if (res.config.lastAutoRolloverAt) appState.lastAutoRolloverAt = String(res.config.lastAutoRolloverAt);
+      if (res.config.lastAutoRolloverWeek) {
+        const lw = parseInt(res.config.lastAutoRolloverWeek, 10);
+        if (lw > 0) {
+          appState.lastAutoRolloverWeek = lw;
+          localStorage.setItem("10A12_LAST_ACTIVE_WEEK", String(lw));
+        }
+      }
+      if (res.config.mondayRolloverTriggerActive !== undefined) {
+        appState.mondayRolloverTriggerActive = (res.config.mondayRolloverTriggerActive === true || String(res.config.mondayRolloverTriggerActive).toUpperCase() === "TRUE");
+      }
+      if (Array.isArray(res.config.criteriaList) && res.config.criteriaList.length > 0) {
+        appState.criteriaList = res.config.criteriaList;
+      }
+    }
+
+    if (!appState.isSeatingDirty) {
+      if (res.config && res.config.seatingLayoutJson) {
+        const parsedSeating = safeJsonParse(res.config.seatingLayoutJson, null);
+        if (Array.isArray(parsedSeating) && parsedSeating.length > 0) {
+          currentSeatingLayout = sanitizeSeatingLayoutWithRoster(parsedSeating);
+        }
+      } else if (Array.isArray(res.seatingRows) && res.seatingRows.length > 0 && typeof applyCloudSeatingRows === "function") {
+        applyCloudSeatingRows(res.seatingRows);
+      }
+    }
+
+    if (typeof recalculateFundSummary === "function") recalculateFundSummary();
+    buildAutoWeekDropdown();
+    applyRolePermissions(false);
+    saveStateToLocal();
+    renderAllSections();
+  }
+  return res;
+}
+
+// ==================== BỘ MÁY ĐỔI MẬT KHẨU ĐỒNG BỘ VĨNH VIỄN (GVCN & HỌC SINH) ====================
+async function handleUnifiedPasswordUpdate(newPassword, confirmPassword) {
+  if (!appState.currentUser) {
+    alert("Vui lòng đăng nhập trước khi đổi mật khẩu!");
+    return false;
+  }
+  const p1 = String(newPassword || "").trim();
+  const p2 = String(confirmPassword || "").trim();
+  if (!p1 || p1.length < 4) {
+    alert("Mật khẩu mới phải có ít nhất 4 ký tự!");
+    return false;
+  }
+  if (p2 && p1 !== p2) {
+    alert("Mật khẩu xác nhận không khớp!");
+    return false;
+  }
+
+  if (appState.roleLevel === "GVCN") {
+    localStorage.setItem("10A12_GVCN_PASSWORD", p1);
+    localStorage.setItem("10A12_GVCN_PASS_DIRTY", "1");
+    const res = await callApi("saveConfig", { gvcnPassword: p1 }, "POST");
+    if (res && res.status === "success") {
+      localStorage.removeItem("10A12_GVCN_PASS_DIRTY");
+      alert("Đã đổi mật khẩu GVCN và lưu vĩnh viễn lên Google Sheets!");
+    } else {
+      alert("Đã lưu mật khẩu mới trên thiết bị này (sẽ tự đồng bộ lên Google Sheets khi có mạng)!");
+    }
+    return true;
+  }
+
+  const stId = appState.currentUser.studentId;
+  if (!stId) return false;
+
+  const overrides = safeJsonParse(localStorage.getItem("10A12_STUDENT_PASS_OVERRIDES"), {});
+  overrides[stId] = p1;
+  localStorage.setItem("10A12_STUDENT_PASS_OVERRIDES", JSON.stringify(overrides));
+
+  const st = appState.students.find(s => s.id === stId);
+  if (st) st.matKhau = p1;
+  saveStateToLocal();
+
+  const res = await callApi("changeStudentPassword", { studentId: stId, newPassword: p1 }, "POST");
+  if (res && res.status === "success") {
+    alert("Đã đổi mật khẩu cá nhân và đồng bộ lên hệ thống thành công!");
+  } else {
+    alert("Đã lưu mật khẩu mới trên thiết bị của bạn!");
+  }
+  return true;
+}
+
+function renderPasswordChangeWidgets() {
+  // 1. Khung đổi mật khẩu cho Học sinh & Ban cán sự trong Tab Cá nhân (#tab-ca-nhan)
+  const tabCaNhan = document.getElementById("tab-ca-nhan");
+  if (tabCaNhan && appState.currentUser && appState.currentUser.studentId && !document.getElementById("studentPasswordChangeCard")) {
+    const card = document.createElement("div");
+    card.id = "studentPasswordChangeCard";
+    card.className = "mt-4 p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3";
+    card.innerHTML = `
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div>
+          <h4 class="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-1.5">
+            <i class="fa-solid fa-key text-amber-600"></i> Đổi Mật Khẩu Đăng Nhập Cá Nhân
+          </h4>
+          <p class="text-[11px] text-slate-500">Mật khẩu mới được lưu đồng bộ trên máy chủ, không bị đặt lại khi tải lại trang</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+        <input type="password" id="stNewPassInput1" placeholder="Nhập mật khẩu mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <input type="password" id="stNewPassInput2" placeholder="Nhập lại mật khẩu mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <button type="button" onclick="submitStudentPasswordCard()" class="py-2 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black transition">
+          <i class="fa-solid fa-shield-halved mr-1"></i> Cập Nhật Mật Khẩu
+        </button>
+      </div>
+    `;
+    tabCaNhan.appendChild(card);
+  }
+
+  // 2. Khung đổi mật khẩu cho GVCN trong Tab Cài đặt (#tab-cai-dat)
+  const tabCaiDat = document.getElementById("tab-cai-dat");
+  if (tabCaiDat && appState.roleLevel === "GVCN" && !document.getElementById("gvcnPasswordChangeCard")) {
+    const card = document.createElement("div");
+    card.id = "gvcnPasswordChangeCard";
+    card.className = "p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3 mb-4";
+    card.innerHTML = `
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div>
+          <h3 class="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-key text-amber-600"></i> Đổi Mật Khẩu Quản Trị GVCN
+          </h3>
+          <p class="text-[11px] text-slate-500">Lưu vĩnh viễn lên Google Sheets (Sheet CauHinh) để đăng nhập trên mọi thiết bị</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+        <input type="password" id="gvcnNewPassInput1" placeholder="Mật khẩu GVCN mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <input type="password" id="gvcnNewPassInput2" placeholder="Xác nhận mật khẩu mới..." class="px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+        <button type="button" onclick="submitGvcnPasswordCard()" class="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black transition">
+          <i class="fa-solid fa-floppy-disk mr-1"></i> Lưu Mật Khẩu GVCN
+        </button>
+      </div>
+    `;
+    tabCaiDat.appendChild(card);
+  }
+}
+
+async function submitStudentPasswordCard() {
+  const p1 = document.getElementById("stNewPassInput1")?.value || "";
+  const p2 = document.getElementById("stNewPassInput2")?.value || "";
+  const ok = await handleUnifiedPasswordUpdate(p1, p2);
+  if (ok) {
+    if (document.getElementById("stNewPassInput1")) document.getElementById("stNewPassInput1").value = "";
+    if (document.getElementById("stNewPassInput2")) document.getElementById("stNewPassInput2").value = "";
+  }
+}
+
+async function submitGvcnPasswordCard() {
+  const p1 = document.getElementById("gvcnNewPassInput1")?.value || "";
+  const p2 = document.getElementById("gvcnNewPassInput2")?.value || "";
+  const ok = await handleUnifiedPasswordUpdate(p1, p2);
+  if (ok) {
+    if (document.getElementById("gvcnNewPassInput1")) document.getElementById("gvcnNewPassInput1").value = "";
+    if (document.getElementById("gvcnNewPassInput2")) document.getElementById("gvcnNewPassInput2").value = "";
+  }
+}
+
+async function refreshData() {
+  renderAllSections();
+  await syncWithCloud();
+  alert("Dữ liệu đã được nạp và làm mới thành công!");
+}
+
+// ==================== 24. ĐIỀU HƯỚNG TỔNG THỂ & KHỞI CHẠY ====================
+function switchTab(tabId) {
+  document.querySelectorAll(".tab-pane").forEach(pane => pane.classList.add("hidden"));
+  const targetPane = document.getElementById(tabId);
+  if (targetPane) targetPane.classList.remove("hidden");
+
+  // Mobile nav buttons
+  document.querySelectorAll(".nav-btn").forEach(btn => {
+    btn.classList.remove("nav-item-active");
+    btn.classList.add("text-slate-400");
+  });
+  const mBtn = document.getElementById(`btn-${tabId}`);
+  if (mBtn) {
+    mBtn.classList.add("nav-item-active");
+    mBtn.classList.remove("text-slate-400");
+  }
+
+  // Desktop side buttons (chữ sáng rõ nét trên Dark Navy)
+  document.querySelectorAll(".side-nav-btn").forEach(btn => {
+    btn.classList.remove("nav-item-active");
+    btn.classList.remove("text-white");
+    btn.classList.add("text-slate-200");
+  });
+  const sBtn = document.getElementById(`btn-side-${tabId}`);
+  if (sBtn) {
+    sBtn.classList.add("nav-item-active");
+    sBtn.classList.remove("text-slate-200");
+    sBtn.classList.add("text-white");
+  }
+
+  if (tabId === "tab-thi-dua") {
+    if (typeof renderTeamDisciplineSummaryCards === "function") renderTeamDisciplineSummaryCards();
+    if (typeof renderAttendanceSession === "function") renderAttendanceSession();
+  }
+  if (tabId === "tab-so-do-lop" && typeof renderSeatingChart === "function") renderSeatingChart();
+  if (tabId === "tab-tkb" && typeof renderTkbSection === "function") renderTkbSection();
+  if (tabId === "tab-lao-dong" && typeof render7DutySection === "function") render7DutySection();
+  if (tabId === "tab-van-the-my" && typeof renderVtmSection === "function") renderVtmSection();
+  if (tabId === "tab-so-dau-bai" && typeof renderPeriodCards === "function") renderPeriodCards();
+  if (tabId === "tab-bien-ban") {
+    if (typeof renderOfficialShlReportTab === "function") renderOfficialShlReportTab();
+    renderSpecialViolationReportsSection();
+  renderYearEndConductGradingPanel();
+  renderProfileCorrectionsInbox();
+  renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
+  renderAllAccountsPasswordManagerCard();
+  injectStudentPhoneFieldInProfileModal();
+  enforceStickyDesktopSidebar();
+  }
+  if (tabId === "tab-cai-dat" && typeof renderSettingsTab === "function") renderSettingsTab();
+  if (tabId === "tab-danh-sach" && typeof renderStudentCards === "function") renderStudentCards(appState.students);
+  if (tabId === "tab-quy-lop" && typeof renderFundChecklist === "function") renderFundChecklist();
+  if (tabId === "tab-tam-tu" && typeof renderTeacherLettersList === "function") renderTeacherLettersList();
+  if (tabId === "tab-ca-nhan" && typeof renderStudentPortal === "function") renderStudentPortal();
+}
+
+function renderAllSections() {
+  renderOverviewDashboard();
+  if (typeof renderTeamDisciplineSummaryCards === "function") renderTeamDisciplineSummaryCards();
+  if (typeof renderAttendanceSession === "function") renderAttendanceSession();
+  if (typeof renderSeatingChart === "function") renderSeatingChart();
+  if (typeof renderTkbSection === "function") renderTkbSection();
+  if (typeof render7DutySection === "function") render7DutySection();
+  if (typeof renderVtmSection === "function") renderVtmSection();
+  if (typeof renderPeriodCards === "function") renderPeriodCards();
+  if (typeof renderFundCampaigns === "function") renderFundCampaigns();
+  if (typeof renderFundChecklist === "function") renderFundChecklist();
+  if (typeof renderStudentCards === "function") renderStudentCards(appState.students);
+  if (typeof renderSettingsTab === "function") renderSettingsTab();
+  updateCelebrationTicker();
+  updateWeeklyRolloverUI();
+  upgradePortalButtonUI();
+  applyDisciplineEnhancements();
+  renderDeletedStudentsArchiveSection();
+  bindDeleteStudentReasonInterceptor();
+  renderCentralizedRoleAppointmentCard();
+  renderSchoolYearStartSettingCard();
+  lockStudentProfileRoleField();
+  renderParentLeaveRequestsInbox();
+  renderSpecialViolationReportsSection();
+  renderYearEndConductGradingPanel();
+  renderProfileCorrectionsInbox();
+  renderCloudScriptUrlSettingCard();
+  renderPasswordChangeWidgets();
+  renderAllAccountsPasswordManagerCard();
+  injectStudentPhoneFieldInProfileModal();
+  enforceStickyDesktopSidebar();
+  if (appState.currentUser && appState.currentUser.studentId && typeof renderStudentPortal === "function") renderStudentPortal();
+}
+
+// Khởi chạy hệ thống khi nạp trang (Tối ưu tốc độ hiển thị tức thì 0ms)
+document.addEventListener("DOMContentLoaded", () => {
+  initAuthSession();
+  checkAndPerformClientMondayRollover({ skipCloudSync: true });
+  buildAutoWeekDropdown();
+  syncAttendanceSessionOnLoad();
+  renderAllSections();
+  updateLiveDashboardEngine();
+
+  // Đồng bộ ngầm với Google Sheets sau 150ms để giao diện Tổng quan hiển thị tức thì trước
+  if (appState.currentUser) {
+    setTimeout(() => syncWithCloud(), 150);
+  }
+
+  setInterval(() => {
+    checkAndPerformClientMondayRollover();
+    updateCelebrationTicker();
+    updateWeeklyRolloverUI();
+    if (appState.currentUser && !appState.isStudentEditingDirty && !appState.isSeatingDirty && !appState.isAppointmentsDirty) {
+      syncWithCloud();
+    }
+  }, 45000);
+  setInterval(updateLiveDashboardEngine, 1000);
+});
+
+// Ghi đè an toàn hàm xóa học sinh nếu được gọi từ module danh sách học sinh
+window.addEventListener("load", () => {
+  bindDeleteStudentReasonInterceptor();
+  bindTopSeatingToolbarButtons();
+  bindStudentDetailModalSavePersistence();
+  if (typeof window.deleteStudent === "function" && !window.deleteStudent._wrappedWithReason) {
+    const wrapped = function(studentId) {
+      openDeleteStudentReasonModal(studentId);
+    };
+    wrapped._wrappedWithReason = true;
+    window.deleteStudent = wrapped;
+  }
+  if (typeof window.deleteCurrentStudent === "function" && !window.deleteCurrentStudent._wrappedWithReason) {
+    const wrappedCur = function(studentId) {
+      openDeleteStudentReasonModal(studentId);
+    };
+    wrappedCur._wrappedWithReason = true;
+    window.deleteCurrentStudent = wrappedCur;
+  }
+});
+
+document.addEventListener("click", (ev) => {
+  const btn = ev.target && ev.target.closest ? ev.target.closest("#btn-tab-so-do-lop, #btn-side-tab-so-do-lop") : null;
+  if (btn) {
+    setTimeout(() => _lockedRenderSeatingChartFn(), 30);
+  }
+  setTimeout(() => {
+    lockStudentProfileRoleField();
+    bindStudentDetailModalSavePersistence();
+  }, 60);
+});
+
+// ==================== CHẶN KÍCH HOẠT KÉP NÚT CỔNG TRA CỨU PH & HS (CAPTURE PHASE) ====================
+document.addEventListener("click", (ev) => {
+  const target = ev.target && ev.target.closest ? ev.target.closest("a, button") : null;
+  if (!target) return;
+  const href = target.getAttribute("href") || "";
+  const onClick = target.getAttribute("onclick") || "";
+  const label = (target.innerText || "").trim();
+  if (
+    href.includes("tracuu.html") ||
+    onClick.includes("copyParentLookupPortalLink") ||
+    onClick.includes("openParentLookupPortal") ||
+    label.includes("Cổng Tra Cứu")
+  ) {
+    openParentLookupPortal(ev);
+  }
+}, true);
+
+
+// ==================== BỔ SUNG HOÀN THIỆN: XUẤT WORD SƠ ĐỒ, TÌM XẾP CHỖ NHANH & CHỐNG NHẢY DỮ LIỆU ====================
+function bindTopSeatingToolbarButtons() {
+  const btnRotate = document.getElementById("btnRotateSeating");
+  if (btnRotate && !btnRotate.dataset.boundMaster) {
+    btnRotate.dataset.boundMaster = "1";
+    btnRotate.onclick = async function(e) {
+      if (e) e.preventDefault();
+      if (!canCurrentUserEditSeating()) {
+        alert("Chỉ GVCN và Lớp trưởng mới có quyền xoay dãy!");
+        return;
+      }
+      if (!confirm("Xoay dãy tuần hoàn: Dãy 1 ➔ Dãy 2 ➔ Dãy 3 ➔ Dãy 4 ➔ Dãy 1?")) return;
+      currentSeatingLayout = currentSeatingLayout.map(row => [
+        row[6], row[7], row[0], row[1], row[2], row[3], row[4], row[5]
+      ]);
+      appState.isSeatingDirty = true;
+      saveStateToLocal();
+      renderSeatingChart();
+      await syncSeatingToCloudNow();
+      alert("Đã xoay dãy ghế tuần hoàn và đồng bộ lên Google Sheets!");
+    };
+  }
+
+  const btnSave = document.getElementById("btnSaveSeating");
+  if (btnSave && !btnSave.dataset.boundMaster) {
+    btnSave.dataset.boundMaster = "1";
+    btnSave.onclick = async function(e) {
+      if (e) e.preventDefault();
+      await syncSeatingToCloudNow();
+      alert("✅ Đã lưu Sơ đồ chỗ ngồi lên Google Sheets thành công!");
+    };
+  }
+
+  const btnDocx = document.getElementById("btnExportSeatingDocx");
+  if (btnDocx && !btnDocx.dataset.boundMaster) {
+    btnDocx.dataset.boundMaster = "1";
+    btnDocx.onclick = function(e) {
+      if (e) e.preventDefault();
+      exportSeatingToDocx();
+    };
+  }
+}
+
+function exportSeatingToDocx() {
+  const layout = sanitizeSeatingLayoutWithRoster(currentSeatingLayout);
+  const nowStr = formatDateVN();
+  const curWeek = Number(appState.selectedWeek) || getAutoSchoolWeek();
+
+  const seatCellHtml = (seat) => {
+    if (!seat || !seat.name) {
+      return `<td style="border:1px solid #94a3b8; padding:8px 4px; text-align:center; color:#94a3b8; font-style:italic; width:11%;">Trống</td>`;
+    }
+    const st = findStudentInfoBySeatName(seat.name);
+    const shortName = getSmartShortStudentName(seat.name);
+    const team = st ? st.to : "";
+    const role = (st && isRealLeadershipRole(st.chucVu)) ? getCompactRoleBadgeText(st.chucVu) : "";
+    const bgMap = { "Tổ 1": "#e0f2fe", "Tổ 2": "#dcfce7", "Tổ 3": "#fef3c7", "Tổ 4": "#f3e8ff" };
+    const bg = bgMap[team] || "#ffffff";
+    return `<td style="border:1px solid #475569; background:${bg}; padding:7px 4px; text-align:center; width:11%;">
+      <b style="font-size:11pt; color:#0f172a;">${escapeHtml(shortName)}</b><br/>
+      <span style="font-size:8.5pt; color:#334155;">${escapeHtml(team)}${role ? " • " + escapeHtml(role) : ""}</span>
+    </td>`;
+  };
+
+  const rowsHtml = layout.map((row, rIdx) => {
+    const banSo = layout.length - rIdx;
+    return `<tr>
+      ${seatCellHtml(row[0])}${seatCellHtml(row[1])}
+      <td style="width:1.5%; border:none;"></td>
+      ${seatCellHtml(row[2])}${seatCellHtml(row[3])}
+      <td style="border:1px solid #cbd5e1; background:#f1f5f9; text-align:center; font-weight:bold; font-size:9pt; width:7%;">BÀN ${banSo}</td>
+      ${seatCellHtml(row[4])}${seatCellHtml(row[5])}
+      <td style="width:1.5%; border:none;"></td>
+      ${seatCellHtml(row[6])}${seatCellHtml(row[7])}
+    </tr>`;
+  }).join("");
+
+  const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+  <head><meta charset='utf-8'><title>Sơ đồ lớp 10A12</title>
+  <style>@page { size: A4 landscape; margin: 1.2cm; } body { font-family: 'Times New Roman', serif; }</style></head>
+  <body>
+    <div style="text-align:center; margin-bottom:10pt;">
+      <p style="margin:0; font-weight:bold; font-size:11pt;">TRƯỜNG THPT SỐ 1 QUANG TRUNG • LỚP 10A12 (K58-QT)</p>
+      <h2 style="margin:4pt 0; font-size:16pt;">SƠ ĐỒ CHỖ NGỒI LỚP HỌC</h2>
+      <p style="margin:0; font-style:italic; font-size:10pt;">Tuần ${curWeek} • Ngày xuất: ${nowStr} • GVCN: ThS. Trần Dương Quốc Mẫn</p>
+    </div>
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th colspan="2" style="background:#1d4ed8; color:#fff; padding:6px; border:1px solid #1e3a8a;">DÃY 1</th>
+          <th style="border:none;"></th>
+          <th colspan="2" style="background:#6d28d9; color:#fff; padding:6px; border:1px solid #4c1d95;">DÃY 2</th>
+          <th style="background:#e2e8f0; color:#334155; padding:6px; border:1px solid #94a3b8;">LỐI ĐI</th>
+          <th colspan="2" style="background:#047857; color:#fff; padding:6px; border:1px solid #064e3b;">DÃY 3</th>
+          <th style="border:none;"></th>
+          <th colspan="2" style="background:#c2410c; color:#fff; padding:6px; border:1px solid #7c2d12;">DÃY 4</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <table style="width:100%; margin-top:12pt; border-collapse:collapse;">
+      <tr>
+        <td style="width:72%; background:#0f172a; color:#fff; text-align:center; font-weight:bold; padding:8px; border:1px solid #0f172a;">BẢNG ĐEN TRUNG TÂM • BỤC GIẢNG • BÀN GIÁO VIÊN</td>
+        <td style="width:3%; border:none;"></td>
+        <td style="width:25%; background:#fef3c7; color:#92400e; text-align:center; font-weight:bold; padding:8px; border:1px dashed #d97706;">CỬA RA VÀO</td>
+      </tr>
+    </table>
+  </body></html>`;
+
+  const blob = new Blob(["\ufeff", html], { type: "application/msword;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `So_Do_Lop_10A12_${new Date().toISOString().slice(0, 10)}.doc`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+let seatingQuickSearchName = "";
+function handleSeatingQuickSearch(query) {
+  seatingQuickSearchName = String(query || "").trim();
+  const qClean = removeVietnameseTones(seatingQuickSearchName);
+  if (!qClean) {
+    seatingSelectedCoords = null;
+    renderSeatingChart();
+    return;
+  }
+  const layout = currentSeatingLayout || DEFAULT_SEATING_LAYOUT;
+  for (let r = 0; r < layout.length; r++) {
+    for (let c = 0; c < (layout[r] || []).length; c++) {
+      const seat = layout[r][c];
+      if (seat && seat.name && removeVietnameseTones(seat.name).includes(qClean)) {
+        seatingSelectedCoords = { r, c };
+        seatingSwapModeEnabled = true;
+        renderSeatingChart();
+        const inp = document.getElementById("seatingQuickSearchInput");
+        if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+        return;
+      }
+    }
+  }
+}
+
+function bindStudentDetailModalSavePersistence() {
+  const modal = document.getElementById("studentDetailModal");
+  if (!modal) return;
+  appState.isStudentEditingDirty = !modal.classList.contains("hidden");
+}
+
+function injectSeatingSearchBoxIntoToolbar() {
+  bindTopSeatingToolbarButtons();
+  const root = document.getElementById("modernSeatingChartRoot");
+  if (!root || document.getElementById("seatingQuickSearchInputWrap")) return;
+  const firstBar = root.firstElementChild;
+  if (firstBar) {
+    const searchWrap = document.createElement("div");
+    searchWrap.id = "seatingQuickSearchInputWrap";
+    searchWrap.className = "flex items-center gap-1.5 flex-1 sm:flex-initial";
+    searchWrap.innerHTML = `
+      <div class="relative flex-1 sm:w-56">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-[11px]"></i>
+        <input type="text" id="seatingQuickSearchInput" value="${escapeAttr(seatingQuickSearchName)}"
+          oninput="handleSeatingQuickSearch(this.value)"
+          placeholder="Tìm tên HS để xếp/đổi chỗ..."
+          class="w-full pl-8 pr-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-300 text-xs font-bold text-slate-900 focus:outline-none focus:border-sky-600">
+      </div>
+    `;
+    firstBar.insertBefore(searchWrap, firstBar.children[1] || null);
+  }
+}
+
+setInterval(injectSeatingSearchBoxIntoToolbar, 800);
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data && event.data.type === "TRIGGER_DRIVE_QUEUE" && typeof processBackgroundDriveUploadQueue === "function") {
+      processBackgroundDriveUploadQueue();
+    }
+  });
+}
